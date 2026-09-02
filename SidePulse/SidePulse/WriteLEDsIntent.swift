@@ -129,13 +129,13 @@ enum SidePulseLEDProgram {
     static let pulseRange = 1...10
 
     static func pulse(color: SidePulseLEDColor, count: Int) -> String {
-        let cycle = "\(color.hex) 280ms pulse\noff 160ms none\n"
-        return Array(repeating: cycle, count: bounded(count)).joined()
+        let pulseCount = bounded(count)
+        let program = "off\n\(color.hex) 280ms pulse\noff 160ms none\n"
+        return pulseCount == 1 ? program : program + "repeat \(pulseCount)\n"
     }
 
     static func breathe(color: SidePulseLEDColor) -> String {
-        let cycle = "\(color.hex) 1.4s pulse\noff 400ms none\n"
-        return cycle + "repeat\n"
+        "off\n\(color.hex) 1.4s pulse\noff 400ms none\nrepeat\n"
     }
 
     static func bounded(_ count: Int) -> Int {
@@ -224,6 +224,26 @@ struct BreatheLEDsIntent: AppIntent {
 }
 
 @available(iOS 16.0, *)
+struct TurnOffLEDsIntent: AppIntent {
+    static var title: LocalizedStringResource = "Turn Off SidePulse LEDs"
+    static var description = IntentDescription("Turns off the SidePulse Dot LEDs.")
+    static var openAppWhenRun = false
+
+    init() {}
+
+    func perform() async throws -> some IntentResult & ProvidesDialog {
+        let program = "off\n"
+        _ = try DriveWriter.shared.write(program)
+        await recordShortcutWrite(
+            title: "Off",
+            body: "Turned off SidePulse Dot",
+            ledText: program
+        )
+        return .result(dialog: "SidePulse Dot is off.")
+    }
+}
+
+@available(iOS 16.0, *)
 struct WriteLEDsIntent: AppIntent {
     static var title: LocalizedStringResource = "Write SidePulse LEDS.LED"
     static var description = IntentDescription("Writes the supplied LED program to LEDS.LED on the selected USB drive.")
@@ -258,6 +278,16 @@ struct SidePulseShortcuts: AppShortcutsProvider {
     static var shortcutTileColor: ShortcutTileColor = .grayBlue
 
     static var appShortcuts: [AppShortcut] {
+        AppShortcut(
+            intent: TurnOffLEDsIntent(),
+            phrases: [
+                "Turn off \(.applicationName)",
+                "Switch off \(.applicationName) LEDs"
+            ],
+            shortTitle: "Turn Off LEDs",
+            systemImageName: "power"
+        )
+
         AppShortcut(
             intent: PulseLEDsIntent(),
             phrases: [

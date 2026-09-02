@@ -31,7 +31,7 @@ PATTERNS: dict[str, LEDPattern] = {
         name="green_pulse_2",
         display_name="Two Green Pulses",
         detail="Two quick confirmation pulses",
-        leds="#00ff00 280ms pulse\noff 160ms none\n#00ff00 280ms pulse\noff 320ms none\n",
+        leds="off\n#00ff00 280ms pulse\noff 160ms none\nrepeat 2\n",
     ),
     "success": LEDPattern(
         name="success",
@@ -49,19 +49,19 @@ PATTERNS: dict[str, LEDPattern] = {
         name="working",
         display_name="Working",
         detail="Blue activity pulse",
-        leds="#0066ff 900ms pulse\n#00ccff 900ms pulse\nrepeat\n",
+        leds="off\n#0066ff 900ms pulse\n#00ccff 900ms pulse\nrepeat\n",
     ),
     "waiting": LEDPattern(
         name="waiting",
         display_name="Waiting",
         detail="Amber waiting breath",
-        leds="#ffaa00 1.2s pulse\noff 500ms none\nrepeat\n",
+        leds="off\n#ffaa00 1.2s pulse\noff 500ms none\nrepeat\n",
     ),
     "white_breathe": LEDPattern(
         name="white_breathe",
         display_name="White Breathe",
         detail="Soft neutral breathing",
-        leds="#404040 1.4s pulse\noff 400ms none\nrepeat\n",
+        leds="off\n#404040 1.4s pulse\noff 400ms none\nrepeat\n",
     ),
 }
 
