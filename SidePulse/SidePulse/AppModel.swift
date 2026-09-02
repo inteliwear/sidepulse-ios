@@ -22,6 +22,7 @@ struct IOSPairingRequest: Identifiable, Equatable {
     let server: URL
     let channel: String
     let sender: String
+    let requiresConfirmation: Bool
 
     var id: String { channel }
 
@@ -39,7 +40,12 @@ struct IOSPairingRequest: Identifiable, Equatable {
                   let server = URL(string: "https://bridge.sidepulse.io") else {
                 throw PairingRequestError.invalidChannel
             }
-            return IOSPairingRequest(server: server, channel: channel, sender: "your computer")
+            return IOSPairingRequest(
+                server: server,
+                channel: channel,
+                sender: "your computer",
+                requiresConfirmation: false
+            )
         }
         guard url.host?.lowercased() == "pair",
               let components = URLComponents(url: url, resolvingAgainstBaseURL: false) else {
@@ -91,7 +97,8 @@ struct IOSPairingRequest: Identifiable, Equatable {
         return IOSPairingRequest(
             server: normalizedServer,
             channel: channel,
-            sender: sender.isEmpty ? "Your computer" : sender
+            sender: sender.isEmpty ? "Your computer" : sender,
+            requiresConfirmation: true
         )
     }
 
@@ -196,9 +203,13 @@ final class AppModel: ObservableObject {
     @discardableResult
     func receivePairingURL(_ url: URL) -> Bool {
         do {
-            pendingPairing = try IOSPairingRequest.parse(url)
+            let pairing = try IOSPairingRequest.parse(url)
+            pendingPairing = pairing
             pairingError = nil
             pairingInProgress = false
+            if !pairing.requiresConfirmation {
+                confirmPairing()
+            }
             return true
         } catch {
             recordError(error)

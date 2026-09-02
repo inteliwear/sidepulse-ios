@@ -300,8 +300,7 @@ private struct LinkSetupPanel: View {
                 .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
                 .padding(.leading, 28)
 
-                instructionStep(2, "Scan the QR code with your iPhone Camera.")
-                instructionStep(3, "Return here and tap Link iPhone.")
+                instructionStep(2, "Scan the QR code with your iPhone Camera to link.")
 
                 Text("For direct HTTP push without CLI linking, use Direct Push Server in Settings.")
                     .font(.caption)
@@ -736,7 +735,7 @@ private struct SettingsView: View {
                     Label("Copy Command", systemImage: "doc.on.doc")
                 }
 
-                Text("2. Scan the QR code using your iPhone Camera.\n3. Confirm by tapping Link iPhone when SidePulse opens.")
+                Text("2. Scan the QR code with your iPhone Camera to link.")
                     .font(.footnote)
                     .foregroundStyle(.secondary)
 
