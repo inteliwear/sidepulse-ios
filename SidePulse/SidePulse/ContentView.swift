@@ -30,6 +30,10 @@ struct ContentView: View {
                             .shortcutsLinkStyle(.automaticOutline)
                     }
 
+                    if !model.isBridgeLinked {
+                        LinkSetupPanel(model: model)
+                    }
+
                     RecentPushesPanel(pushes: latestNotificationPushes)
 
                     QuickPatternsPanel { pattern in
@@ -257,6 +261,45 @@ private enum ActiveSheet: Identifiable {
         switch self {
         case .folderSetup:
             return "folderSetup"
+        }
+    }
+}
+
+private struct LinkSetupPanel: View {
+    @ObservedObject var model: AppModel
+
+    var body: some View {
+        Panel {
+            VStack(alignment: .leading, spacing: 12) {
+                Label("Link this iPhone", systemImage: "link.circle.fill")
+                    .font(.headline)
+                    .foregroundStyle(.tint)
+
+                Text("Send SidePulse writes from your Mac when no local device is connected.")
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+
+                Text("1. On your Mac, open Terminal and run:")
+                    .font(.subheadline)
+
+                Text("sidepulse link")
+                    .font(.system(.body, design: .monospaced).weight(.semibold))
+                    .textSelection(.enabled)
+
+                Text("2. Scan the QR code with your iPhone Camera.")
+                    .font(.subheadline)
+                Text("3. Return here and tap Link iPhone.")
+                    .font(.subheadline)
+
+                Button {
+                    UIPasteboard.general.string = "sidepulse link"
+                    model.lastMessage = "Copied sidepulse link command"
+                } label: {
+                    Label("Copy Command", systemImage: "doc.on.doc")
+                }
+                .buttonStyle(.bordered)
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
         }
     }
 }
@@ -637,6 +680,37 @@ private struct SettingsView: View {
 
     var body: some View {
         Form {
+            Section("Link to Your Mac") {
+                Label(
+                    model.isBridgeLinked ? "Linked" : "Not linked",
+                    systemImage: model.isBridgeLinked ? "checkmark.circle.fill" : "link.circle"
+                )
+                .foregroundStyle(model.isBridgeLinked ? .green : .secondary)
+
+                Text("1. Open Terminal on your Mac and run:")
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
+
+                Text("sidepulse link")
+                    .font(.system(.body, design: .monospaced).weight(.semibold))
+                    .textSelection(.enabled)
+
+                Button {
+                    UIPasteboard.general.string = "sidepulse link"
+                    model.lastMessage = "Copied sidepulse link command"
+                } label: {
+                    Label("Copy Command", systemImage: "doc.on.doc")
+                }
+
+                Text("2. Scan the QR code using your iPhone Camera.\n3. Confirm by tapping Link iPhone when SidePulse opens.")
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
+
+                Text("If scanning is unavailable, copy the push token below and paste it into the waiting Terminal command.")
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
+            }
+
             Section("Push Token") {
                 Button {
                     requestPushToken()

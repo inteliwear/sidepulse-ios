@@ -133,6 +133,10 @@ final class AppModel: ObservableObject {
         didSet { UserDefaults.standard.set(bridgeBaseURL, forKey: Defaults.bridgeBaseURL) }
     }
 
+    @Published var isBridgeLinked: Bool {
+        didSet { UserDefaults.standard.set(isBridgeLinked, forKey: Defaults.isBridgeLinked) }
+    }
+
     @Published var pendingPairing: IOSPairingRequest?
     @Published var pairingInProgress = false
     @Published var pairingError: String?
@@ -154,6 +158,7 @@ final class AppModel: ObservableObject {
         static let serverBaseURL = "serverBaseURL"
         static let sharedSecret = "sharedSecret"
         static let bridgeBaseURL = "bridgeBaseURL"
+        static let isBridgeLinked = "isBridgeLinked"
         static let receivedPushes = "receivedPushes"
         static let processedEventIDs = "processedEventIDs"
     }
@@ -170,6 +175,7 @@ final class AppModel: ObservableObject {
         self.sharedSecret = UserDefaults.standard.string(forKey: Defaults.sharedSecret) ?? ""
         self.bridgeBaseURL = UserDefaults.standard.string(forKey: Defaults.bridgeBaseURL)
             ?? "https://bridge.sidepulse.io"
+        self.isBridgeLinked = UserDefaults.standard.bool(forKey: Defaults.isBridgeLinked)
         self.pendingPairing = nil
         self.receivedPushes = Self.loadReceivedPushes()
         self.eventLog = EventLog.entries()
@@ -275,6 +281,7 @@ final class AppModel: ObservableObject {
                 bridgeBaseURL = pairing.server.absoluteString.trimmingCharacters(
                     in: CharacterSet(charactersIn: "/")
                 )
+                isBridgeLinked = true
                 pendingPairing = nil
                 pairingInProgress = false
                 pairingSubmissionInFlight = false
@@ -330,6 +337,9 @@ final class AppModel: ObservableObject {
 
     @discardableResult
     func processResolvedPush(_ resolution: PushPayloadResolution, source: String) -> Bool {
+        if resolution.eventID != nil, !isBridgeLinked {
+            isBridgeLinked = true
+        }
         if let eventID = resolution.eventID, processedEventIDs()[eventID] != nil {
             EventLog.append("Ignored duplicate SidePulse event")
             refreshEventLog()
