@@ -16,9 +16,9 @@ enum SidePulseLEDColor: String, CaseIterable {
 
     var hex: String {
         switch self {
-        case .red: "#ff1f3d"
-        case .green: "#00ff66"
-        case .blue: "#0066ff"
+        case .red: "#ff0000"
+        case .green: "#00ff00"
+        case .blue: "#0000ff"
         case .purple: "#a855f7"
         case .aqua: "#00e5ff"
         case .ember: "#ff6a00"
@@ -27,7 +27,7 @@ enum SidePulseLEDColor: String, CaseIterable {
 }
 
 @available(iOS 16.0, *)
-enum SidePulsePulseColor: String, AppEnum {
+enum SidePulsePulseColor: String, AppEnum, CaseIterable {
     case red
     case green
     case blue
@@ -41,32 +41,32 @@ enum SidePulsePulseColor: String, AppEnum {
         .red: DisplayRepresentation(
             title: "Red",
             subtitle: "Pulse",
-            image: DisplayRepresentation.Image(named: "ShortcutPulseRed", isTemplate: false)
+            image: DisplayRepresentation.Image(named: "ShortcutPulseDotRed", isTemplate: false)
         ),
         .green: DisplayRepresentation(
             title: "Green",
             subtitle: "Pulse",
-            image: DisplayRepresentation.Image(named: "ShortcutPulseGreen", isTemplate: false)
+            image: DisplayRepresentation.Image(named: "ShortcutPulseDotGreen", isTemplate: false)
         ),
         .blue: DisplayRepresentation(
             title: "Blue",
             subtitle: "Pulse",
-            image: DisplayRepresentation.Image(named: "ShortcutPulseBlue", isTemplate: false)
+            image: DisplayRepresentation.Image(named: "ShortcutPulseDotBlue", isTemplate: false)
         ),
         .purple: DisplayRepresentation(
             title: "Purple",
             subtitle: "Pulse",
-            image: DisplayRepresentation.Image(named: "ShortcutPulsePurple", isTemplate: false)
+            image: DisplayRepresentation.Image(named: "ShortcutPulseDotPurple", isTemplate: false)
         ),
         .aqua: DisplayRepresentation(
             title: "Aqua",
             subtitle: "Pulse",
-            image: DisplayRepresentation.Image(named: "ShortcutPulseAqua", isTemplate: false)
+            image: DisplayRepresentation.Image(named: "ShortcutPulseDotAqua", isTemplate: false)
         ),
         .ember: DisplayRepresentation(
             title: "Ember",
             subtitle: "Pulse",
-            image: DisplayRepresentation.Image(named: "ShortcutPulseEmber", isTemplate: false)
+            image: DisplayRepresentation.Image(named: "ShortcutPulseDotEmber", isTemplate: false)
         )
     ]
 
@@ -76,7 +76,7 @@ enum SidePulsePulseColor: String, AppEnum {
 }
 
 @available(iOS 16.0, *)
-enum SidePulseBreatheColor: String, AppEnum {
+enum SidePulseBreatheColor: String, AppEnum, CaseIterable {
     case red
     case green
     case blue
@@ -90,32 +90,32 @@ enum SidePulseBreatheColor: String, AppEnum {
         .red: DisplayRepresentation(
             title: "Red",
             subtitle: "Breathe",
-            image: DisplayRepresentation.Image(named: "ShortcutBreatheRed", isTemplate: false)
+            image: DisplayRepresentation.Image(named: "ShortcutBreatheDotRed", isTemplate: false)
         ),
         .green: DisplayRepresentation(
             title: "Green",
             subtitle: "Breathe",
-            image: DisplayRepresentation.Image(named: "ShortcutBreatheGreen", isTemplate: false)
+            image: DisplayRepresentation.Image(named: "ShortcutBreatheDotGreen", isTemplate: false)
         ),
         .blue: DisplayRepresentation(
             title: "Blue",
             subtitle: "Breathe",
-            image: DisplayRepresentation.Image(named: "ShortcutBreatheBlue", isTemplate: false)
+            image: DisplayRepresentation.Image(named: "ShortcutBreatheDotBlue", isTemplate: false)
         ),
         .purple: DisplayRepresentation(
             title: "Purple",
             subtitle: "Breathe",
-            image: DisplayRepresentation.Image(named: "ShortcutBreathePurple", isTemplate: false)
+            image: DisplayRepresentation.Image(named: "ShortcutBreatheDotPurple", isTemplate: false)
         ),
         .aqua: DisplayRepresentation(
             title: "Aqua",
             subtitle: "Breathe",
-            image: DisplayRepresentation.Image(named: "ShortcutBreatheAqua", isTemplate: false)
+            image: DisplayRepresentation.Image(named: "ShortcutBreatheDotAqua", isTemplate: false)
         ),
         .ember: DisplayRepresentation(
             title: "Ember",
             subtitle: "Breathe",
-            image: DisplayRepresentation.Image(named: "ShortcutBreatheEmber", isTemplate: false)
+            image: DisplayRepresentation.Image(named: "ShortcutBreatheDotEmber", isTemplate: false)
         )
     ]
 
@@ -140,6 +140,20 @@ enum SidePulseLEDProgram {
 
     static func bounded(_ count: Int) -> Int {
         min(max(count, pulseRange.lowerBound), pulseRange.upperBound)
+    }
+}
+
+@available(iOS 17.0, *)
+struct PulseColorOptionsProvider: DynamicOptionsProvider {
+    func results() async throws -> [SidePulsePulseColor] {
+        SidePulsePulseColor.allCases
+    }
+}
+
+@available(iOS 17.0, *)
+struct BreatheColorOptionsProvider: DynamicOptionsProvider {
+    func results() async throws -> [SidePulseBreatheColor] {
+        SidePulseBreatheColor.allCases
     }
 }
 
@@ -273,7 +287,7 @@ struct WriteLEDsIntent: AppIntent {
     }
 }
 
-@available(iOS 16.0, *)
+@available(iOS 17.0, *)
 struct SidePulseShortcuts: AppShortcutsProvider {
     static var shortcutTileColor: ShortcutTileColor = .grayBlue
 
@@ -295,7 +309,17 @@ struct SidePulseShortcuts: AppShortcutsProvider {
                 "Pulse the LEDs with \(.applicationName)"
             ],
             shortTitle: "Pulse LEDs",
-            systemImageName: "waveform.path"
+            systemImageName: "waveform.path",
+            parameterPresentation: ParameterPresentation(
+                for: \.$color,
+                summary: Summary("Pulse \(\.$color)")
+            ) {
+                OptionsCollection(
+                    PulseColorOptionsProvider(),
+                    title: "Pulse LEDs",
+                    systemImageName: "circle.grid.2x1.fill"
+                )
+            }
         )
 
         AppShortcut(
@@ -305,7 +329,17 @@ struct SidePulseShortcuts: AppShortcutsProvider {
                 "Breathe the LEDs with \(.applicationName)"
             ],
             shortTitle: "Breathe LEDs",
-            systemImageName: "wind"
+            systemImageName: "wind",
+            parameterPresentation: ParameterPresentation(
+                for: \.$color,
+                summary: Summary("Breathe \(\.$color)")
+            ) {
+                OptionsCollection(
+                    BreatheColorOptionsProvider(),
+                    title: "Breathe LEDs",
+                    systemImageName: "circle.grid.2x1.fill"
+                )
+            }
         )
 
         AppShortcut(

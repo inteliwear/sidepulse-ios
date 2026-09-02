@@ -24,6 +24,12 @@ struct ContentView: View {
         NavigationStack {
             ScrollView {
                 VStack(alignment: .leading, spacing: 16) {
+                    HStack {
+                        Spacer()
+                        ShortcutsLink()
+                            .shortcutsLinkStyle(.automaticOutline)
+                    }
+
                     RecentPushesPanel(pushes: latestNotificationPushes)
 
                     QuickPatternsPanel { pattern in
@@ -368,6 +374,38 @@ private struct QuickPatternsPanel: View {
         VStack(alignment: .leading, spacing: 10) {
             Text("Quick Patterns")
                 .font(.headline)
+
+            Button {
+                if let offPattern = LEDPatternCatalog.pattern(named: "off") {
+                    writePattern(offPattern)
+                }
+            } label: {
+                Panel {
+                    HStack(spacing: 12) {
+                        ZStack {
+                            Circle()
+                                .fill(Color(.tertiarySystemFill))
+                            Image(systemName: "power")
+                                .font(.headline)
+                                .foregroundStyle(.secondary)
+                        }
+                        .frame(width: 40, height: 40)
+
+                        VStack(alignment: .leading, spacing: 3) {
+                            Text("Off")
+                                .font(.subheadline.weight(.semibold))
+                                .foregroundStyle(.primary)
+                            Text("Turn off SidePulse Dot")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                        }
+
+                        Spacer()
+                    }
+                    .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
+                }
+            }
+            .buttonStyle(.plain)
 
             ForEach(QuickPatternEffect.allCases) { effect in
                 VStack(alignment: .leading, spacing: 8) {

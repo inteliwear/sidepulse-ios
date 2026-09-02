@@ -6,7 +6,9 @@ struct SidePulseApp: App {
     @UIApplicationDelegateAdaptor(AppDelegate.self) private var appDelegate
 
     init() {
-        SidePulseShortcuts.updateAppShortcutParameters()
+        if #available(iOS 17.0, *) {
+            SidePulseShortcuts.updateAppShortcutParameters()
+        }
     }
 
     var body: some Scene {

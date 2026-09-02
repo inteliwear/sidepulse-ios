@@ -27,42 +27,42 @@ enum LEDPatternCatalog {
             name: "green_pulse_2",
             displayName: "Two Green Pulses",
             detail: "Two quick confirmation pulses",
-            ledText: "#00ff00 280ms pulse\noff 160ms none\n#00ff00 280ms pulse\noff 320ms none\n",
+            ledText: "off\n#00ff00 280ms pulse\noff 160ms none\nrepeat 2\n",
             tintHex: "#20c997"
         ),
         LEDPattern(
             name: "success",
             displayName: "Success",
             detail: "Soft green success glow",
-            ledText: "#00ff66 450ms cosine\noff 160ms none\n",
+            ledText: "#00ff00 450ms cosine\noff 160ms none\n",
             tintHex: "#22c55e"
         ),
         LEDPattern(
             name: "error",
             displayName: "Error",
             detail: "Red attention blink",
-            ledText: "#ff1f3d 120ms none\noff 120ms none\nrepeat 3\n",
+            ledText: "#ff0000 120ms none\noff 120ms none\nrepeat 3\n",
             tintHex: "#ef4444"
         ),
         LEDPattern(
             name: "working",
             displayName: "Working",
             detail: "Blue activity pulse",
-            ledText: "#0066ff 900ms pulse\n#00ccff 900ms pulse\nrepeat\n",
+            ledText: "off\n#0000ff 900ms pulse\n#00ccff 900ms pulse\nrepeat\n",
             tintHex: "#0ea5e9"
         ),
         LEDPattern(
             name: "waiting",
             displayName: "Waiting",
             detail: "Amber waiting breath",
-            ledText: "#ffaa00 1.2s pulse\noff 500ms none\nrepeat\n",
+            ledText: "off\n#ffaa00 1.2s pulse\noff 500ms none\nrepeat\n",
             tintHex: "#f59e0b"
         ),
         LEDPattern(
             name: "white_breathe",
             displayName: "White Breathe",
             detail: "Soft neutral breathing",
-            ledText: "#404040 1.4s pulse\noff 400ms none\nrepeat\n",
+            ledText: "off\n#404040 1.4s pulse\noff 400ms none\nrepeat\n",
             tintHex: "#f8fafc"
         )
     ]

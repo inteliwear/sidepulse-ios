@@ -37,19 +37,19 @@ PATTERNS: dict[str, LEDPattern] = {
         name="success",
         display_name="Success",
         detail="Soft green success glow",
-        leds="#00ff66 450ms cosine\noff 160ms none\n",
+        leds="#00ff00 450ms cosine\noff 160ms none\n",
     ),
     "error": LEDPattern(
         name="error",
         display_name="Error",
         detail="Red attention blink",
-        leds="#ff1f3d 120ms none\noff 120ms none\nrepeat 3\n",
+        leds="#ff0000 120ms none\noff 120ms none\nrepeat 3\n",
     ),
     "working": LEDPattern(
         name="working",
         display_name="Working",
         detail="Blue activity pulse",
-        leds="off\n#0066ff 900ms pulse\n#00ccff 900ms pulse\nrepeat\n",
+        leds="off\n#0000ff 900ms pulse\n#00ccff 900ms pulse\nrepeat\n",
     ),
     "waiting": LEDPattern(
         name="waiting",

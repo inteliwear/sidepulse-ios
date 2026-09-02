@@ -128,6 +128,7 @@ final class AppModel: ObservableObject {
     private init() {
         self.pushToken = UserDefaults.standard.string(forKey: Defaults.pushToken) ?? ""
         self.ledText = UserDefaults.standard.string(forKey: Defaults.ledText) ?? """
+        off
         #404040 1.4s pulse
         off 400ms none
         repeat
