@@ -55,7 +55,8 @@ final class AppDelegate: NSObject, UIApplicationDelegate, UNUserNotificationCent
         open url: URL,
         options: [UIApplication.OpenURLOptionsKey: Any] = [:]
     ) -> Bool {
-        if url.scheme?.lowercased() == "sidepulse", url.host?.lowercased() == "pair" {
+        if url.scheme?.lowercased() == "sidepulse",
+           ["p", "pair"].contains(url.host?.lowercased() ?? "") {
             Task { @MainActor in
                 AppModel.shared.receivePairingURL(url)
             }

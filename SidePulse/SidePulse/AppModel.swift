@@ -20,13 +20,28 @@ enum PairingRequestError: LocalizedError {
 
 struct IOSPairingRequest: Identifiable, Equatable {
     let server: URL
-    let channel: UUID
+    let channel: String
     let sender: String
 
-    var id: UUID { channel }
+    var id: String { channel }
 
     static func parse(_ url: URL) throws -> IOSPairingRequest {
-        guard url.scheme?.lowercased() == "sidepulse", url.host?.lowercased() == "pair",
+        guard url.scheme?.lowercased() == "sidepulse" else {
+            throw PairingRequestError.invalidLink
+        }
+        if url.host?.lowercased() == "p" {
+            guard let components = URLComponents(url: url, resolvingAgainstBaseURL: false),
+                  components.query == nil, components.fragment == nil else {
+                throw PairingRequestError.invalidLink
+            }
+            let channel = url.path.trimmingCharacters(in: CharacterSet(charactersIn: "/"))
+            guard isCompactChannel(channel),
+                  let server = URL(string: "https://bridge.sidepulse.io") else {
+                throw PairingRequestError.invalidChannel
+            }
+            return IOSPairingRequest(server: server, channel: channel, sender: "your computer")
+        }
+        guard url.host?.lowercased() == "pair",
               let components = URLComponents(url: url, resolvingAgainstBaseURL: false) else {
             throw PairingRequestError.invalidLink
         }
@@ -37,7 +52,15 @@ struct IOSPairingRequest: Identifiable, Equatable {
         guard values["v"] == "1" else {
             throw PairingRequestError.unsupportedVersion
         }
-        guard let channelText = values["channel"], let channel = UUID(uuidString: channelText) else {
+        guard let channelText = values["channel"] else {
+            throw PairingRequestError.invalidChannel
+        }
+        let channel: String
+        if isCompactChannel(channelText) {
+            channel = channelText
+        } else if let legacyChannel = UUID(uuidString: channelText) {
+            channel = legacyChannel.uuidString.lowercased()
+        } else {
             throw PairingRequestError.invalidChannel
         }
         guard let serverText = values["server"], let server = URL(string: serverText),
@@ -70,6 +93,16 @@ struct IOSPairingRequest: Identifiable, Equatable {
             channel: channel,
             sender: sender.isEmpty ? "Your computer" : sender
         )
+    }
+
+    private static func isCompactChannel(_ value: String) -> Bool {
+        value.count == 11 && value.unicodeScalars.allSatisfy {
+            (65...90).contains($0.value)
+                || (97...122).contains($0.value)
+                || (48...57).contains($0.value)
+                || $0.value == 45
+                || $0.value == 95
+        }
     }
 }
 
@@ -219,7 +252,7 @@ final class AppModel: ObservableObject {
                 let endpoint = pairing.server
                     .appendingPathComponent("api")
                     .appendingPathComponent("leds")
-                    .appendingPathComponent(pairing.channel.uuidString.lowercased())
+                    .appendingPathComponent(pairing.channel)
                 let body: [String: Any] = [
                     "v": 1,
                     "type": "ios_registration",
