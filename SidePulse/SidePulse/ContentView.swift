@@ -291,6 +291,10 @@ private struct LinkSetupPanel: View {
                 Text("3. Return here and tap Link iPhone.")
                     .font(.subheadline)
 
+                Text("For direct HTTP push without CLI linking, use Direct Push Server in Settings.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+
                 Button {
                     UIPasteboard.general.string = "sidepulse link"
                     model.lastMessage = "Copied sidepulse link command"
@@ -762,8 +766,16 @@ private struct SettingsView: View {
                     .foregroundStyle(.secondary)
             }
 
-            Section("Advanced Server") {
-                TextField("Proxy base URL", text: $model.serverBaseURL)
+            Section("Direct Push Server") {
+                Text("Use the original raw server for push-only delivery without linking the SidePulse CLI.")
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
+
+                Text("1. Get and copy the push token above.\n2. Configure the raw server with that token.\n3. Send JSON to the endpoint below.")
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
+
+                TextField("Push server base URL", text: $model.serverBaseURL)
                     .textInputAutocapitalization(.never)
                     .autocorrectionDisabled()
                     .keyboardType(.URL)
@@ -773,12 +785,20 @@ private struct SettingsView: View {
                     .autocorrectionDisabled()
 
                 if let endpoint = model.pushEndpointURL {
+                    Text("Push endpoint")
+                        .font(.caption.weight(.semibold))
+                        .foregroundStyle(.secondary)
+
                     Text(endpoint)
                         .font(.system(.footnote, design: .monospaced))
                         .textSelection(.enabled)
                 }
 
                 if let curlExample = model.curlExample {
+                    Text("Example request")
+                        .font(.caption.weight(.semibold))
+                        .foregroundStyle(.secondary)
+
                     Text(curlExample)
                         .font(.system(.caption, design: .monospaced))
                         .textSelection(.enabled)
