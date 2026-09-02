@@ -270,30 +270,43 @@ private struct LinkSetupPanel: View {
 
     var body: some View {
         Panel {
-            VStack(alignment: .leading, spacing: 12) {
-                Label("Link this iPhone", systemImage: "link.circle.fill")
-                    .font(.headline)
-                    .foregroundStyle(.tint)
+            VStack(alignment: .leading, spacing: 10) {
+                HStack(spacing: 8) {
+                    Image(systemName: "link.circle.fill")
+                        .foregroundStyle(.tint)
+                    Text("Link this iPhone")
+                        .foregroundStyle(.primary)
+                }
+                .font(.subheadline.weight(.semibold))
 
                 Text("Send SidePulse writes from your Mac when no local device is connected.")
-                    .font(.subheadline)
+                    .font(.footnote)
                     .foregroundStyle(.secondary)
+                    .lineSpacing(2)
 
-                Text("1. On your Mac, open Terminal and run:")
-                    .font(.subheadline)
+                instructionStep(1, "On your Mac, open Terminal and run:")
 
-                Text("sidepulse link")
-                    .font(.system(.body, design: .monospaced).weight(.semibold))
-                    .textSelection(.enabled)
+                HStack(spacing: 8) {
+                    Image(systemName: "terminal")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                    Text("sidepulse link")
+                        .font(.system(.footnote, design: .monospaced).weight(.semibold))
+                        .textSelection(.enabled)
+                }
+                .padding(.horizontal, 10)
+                .padding(.vertical, 8)
+                .background(Color(.tertiarySystemGroupedBackground))
+                .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+                .padding(.leading, 28)
 
-                Text("2. Scan the QR code with your iPhone Camera.")
-                    .font(.subheadline)
-                Text("3. Return here and tap Link iPhone.")
-                    .font(.subheadline)
+                instructionStep(2, "Scan the QR code with your iPhone Camera.")
+                instructionStep(3, "Return here and tap Link iPhone.")
 
                 Text("For direct HTTP push without CLI linking, use Direct Push Server in Settings.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
+                    .lineSpacing(1)
 
                 Button {
                     UIPasteboard.general.string = "sidepulse link"
@@ -302,8 +315,22 @@ private struct LinkSetupPanel: View {
                     Label("Copy Command", systemImage: "doc.on.doc")
                 }
                 .buttonStyle(.bordered)
+                .controlSize(.small)
             }
             .frame(maxWidth: .infinity, alignment: .leading)
+        }
+    }
+
+    private func instructionStep(_ number: Int, _ text: String) -> some View {
+        HStack(alignment: .firstTextBaseline, spacing: 8) {
+            Text("\(number)")
+                .font(.caption2.weight(.bold))
+                .foregroundStyle(.tint)
+                .frame(width: 20, height: 20)
+                .background(Color.accentColor.opacity(0.14), in: Circle())
+            Text(text)
+                .font(.footnote)
+                .foregroundStyle(.primary)
         }
     }
 }
@@ -318,8 +345,11 @@ private struct RecentPushesPanel: View {
                     .font(.headline)
                 Spacer()
                 Text("\(pushes.count)")
-                    .font(.caption.weight(.semibold))
+                    .font(.caption2.monospacedDigit().weight(.semibold))
                     .foregroundStyle(.secondary)
+                    .padding(.horizontal, 7)
+                    .padding(.vertical, 3)
+                    .background(Color(.tertiarySystemGroupedBackground), in: Capsule())
             }
 
             if pushes.isEmpty {
@@ -457,7 +487,7 @@ private struct QuickPatternsPanel: View {
             ForEach(QuickPatternEffect.allCases) { effect in
                 VStack(alignment: .leading, spacing: 8) {
                     Text(effect.displayName)
-                        .font(.subheadline.weight(.semibold))
+                        .font(.footnote.weight(.semibold))
                         .foregroundStyle(.secondary)
 
                     if effect == .pulse {
@@ -886,7 +916,7 @@ private struct Panel<Content: View>: View {
         content()
             .padding(14)
             .background(Color(.secondarySystemGroupedBackground))
-            .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+            .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
     }
 }
 
