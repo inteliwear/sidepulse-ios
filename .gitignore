@@ -1,0 +1,10 @@
+.DS_Store
+DerivedData/
+*.xcuserstate
+xcuserdata/
+__pycache__/
+*.py[cod]
+.venv/
+*.env
+sidepulse.env
+
