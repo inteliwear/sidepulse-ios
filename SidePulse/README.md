@@ -13,20 +13,20 @@ The app supports:
 - Shortcuts or URL actions such as `sidepulse://write?pattern=success`.
 - Optional SidePulse Dot folder writes through Files.
 
-The bundle identifier is `io.sidepulse.app`.
+The bundle identifier is `io.sidepulse.ios`.
 
 ## iOS setup
 
 1. Open `SidePulse.xcodeproj` in Xcode.
 2. Select the `SidePulse` target.
 3. Select your Apple Developer team.
-4. Confirm the bundle identifier is `io.sidepulse.app`.
+4. Confirm the bundle identifier is `io.sidepulse.ios`.
 5. Confirm these capabilities:
    - Push Notifications
    - Background Modes -> Remote notifications
 6. Build and run on a real iPhone or iPad. APNs push tokens do not work on the
    simulator.
-7. Tap **Get Push Token** and copy the token.
+7. Run `sidepulse link` on your computer and scan its QR code, or tap **Get Push Token** and copy the token into that command.
 8. Tap **Set Up SidePulse Dot Folder**, then select the SidePulse Dot USB drive folder
    containing `LEDS.LED` in Files.
 
@@ -46,7 +46,7 @@ For silent/background writes, APNs should use:
 ```text
 apns-push-type: background
 apns-priority: 5
-apns-topic: io.sidepulse.app
+apns-topic: io.sidepulse.ios
 ```
 
 ## Payloads
@@ -101,7 +101,7 @@ Set APNs credentials and server defaults:
 export APNS_TEAM_ID="YOUR_TEAM_ID"
 export APNS_KEY_ID="YOUR_KEY_ID"
 export APNS_AUTH_KEY="/path/to/AuthKey_YOUR_KEY_ID.p8"
-export APNS_BUNDLE_ID="io.sidepulse.app"
+export APNS_BUNDLE_ID="io.sidepulse.ios"
 export APNS_ENV="sandbox"
 export SIDEPULSE_DEVICE_TOKEN="token copied from the app"
 export SIDEPULSE_SHARED_SECRET="choose-a-local-testing-secret"

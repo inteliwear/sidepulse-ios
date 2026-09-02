@@ -1,5 +1,77 @@
 import Foundation
 import UIKit
+import UserNotifications
+
+enum PairingRequestError: LocalizedError {
+    case invalidLink
+    case unsupportedVersion
+    case invalidServer
+    case invalidChannel
+
+    var errorDescription: String? {
+        switch self {
+        case .invalidLink: "This SidePulse pairing link is invalid."
+        case .unsupportedVersion: "This SidePulse pairing link uses an unsupported version."
+        case .invalidServer: "The pairing link contains an invalid bridge server."
+        case .invalidChannel: "The pairing link contains an invalid channel."
+        }
+    }
+}
+
+struct IOSPairingRequest: Identifiable, Equatable {
+    let server: URL
+    let channel: UUID
+    let sender: String
+
+    var id: UUID { channel }
+
+    static func parse(_ url: URL) throws -> IOSPairingRequest {
+        guard url.scheme?.lowercased() == "sidepulse", url.host?.lowercased() == "pair",
+              let components = URLComponents(url: url, resolvingAgainstBaseURL: false) else {
+            throw PairingRequestError.invalidLink
+        }
+        let values = Dictionary(
+            components.queryItems?.map { ($0.name, $0.value ?? "") } ?? [],
+            uniquingKeysWith: { _, latest in latest }
+        )
+        guard values["v"] == "1" else {
+            throw PairingRequestError.unsupportedVersion
+        }
+        guard let channelText = values["channel"], let channel = UUID(uuidString: channelText) else {
+            throw PairingRequestError.invalidChannel
+        }
+        guard let serverText = values["server"], let server = URL(string: serverText),
+              let serverComponents = URLComponents(url: server, resolvingAgainstBaseURL: false),
+              let host = serverComponents.host, !host.isEmpty,
+              serverComponents.user == nil, serverComponents.password == nil,
+              serverComponents.query == nil, serverComponents.fragment == nil,
+              serverComponents.path.isEmpty || serverComponents.path == "/" else {
+            throw PairingRequestError.invalidServer
+        }
+        let scheme = serverComponents.scheme?.lowercased()
+        var schemeAllowed = scheme == "https"
+#if DEBUG
+        if scheme == "http", ["localhost", "127.0.0.1", "::1"].contains(host.lowercased()) {
+            schemeAllowed = true
+        }
+#endif
+        guard schemeAllowed else {
+            throw PairingRequestError.invalidServer
+        }
+        var normalized = serverComponents
+        normalized.path = ""
+        guard let normalizedServer = normalized.url else {
+            throw PairingRequestError.invalidServer
+        }
+        let sender = String((values["sender"] ?? "Your computer").prefix(80))
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        return IOSPairingRequest(
+            server: normalizedServer,
+            channel: channel,
+            sender: sender.isEmpty ? "Your computer" : sender
+        )
+    }
+}
 
 @MainActor
 final class AppModel: ObservableObject {
@@ -24,6 +96,19 @@ final class AppModel: ObservableObject {
         didSet { UserDefaults.standard.set(sharedSecret, forKey: Defaults.sharedSecret) }
     }
 
+    @Published var bridgeBaseURL: String {
+        didSet { UserDefaults.standard.set(bridgeBaseURL, forKey: Defaults.bridgeBaseURL) }
+    }
+
+    @Published var pendingPairing: IOSPairingRequest?
+    @Published var pairingInProgress = false
+    @Published var pairingError: String?
+    @Published var lastRecoveryStatus = "Not checked"
+
+    private var recoveryInProgress = false
+    private var lastRecoveryAttempt: Date?
+    private var pairingSubmissionInFlight = false
+
     @Published var lastMessage: String = "Ready"
     @Published var eventLog: [String] = []
     @Published var receivedPushes: [ReceivedPush] {
@@ -35,7 +120,9 @@ final class AppModel: ObservableObject {
         static let ledText = "ledText"
         static let serverBaseURL = "serverBaseURL"
         static let sharedSecret = "sharedSecret"
+        static let bridgeBaseURL = "bridgeBaseURL"
         static let receivedPushes = "receivedPushes"
+        static let processedEventIDs = "processedEventIDs"
     }
 
     private init() {
@@ -47,6 +134,9 @@ final class AppModel: ObservableObject {
         """
         self.serverBaseURL = UserDefaults.standard.string(forKey: Defaults.serverBaseURL) ?? "http://127.0.0.1:8787"
         self.sharedSecret = UserDefaults.standard.string(forKey: Defaults.sharedSecret) ?? ""
+        self.bridgeBaseURL = UserDefaults.standard.string(forKey: Defaults.bridgeBaseURL)
+            ?? "https://bridge.sidepulse.io"
+        self.pendingPairing = nil
         self.receivedPushes = Self.loadReceivedPushes()
         self.eventLog = EventLog.entries()
         refreshFolderStatus()
@@ -57,6 +147,110 @@ final class AppModel: ObservableObject {
         EventLog.append("APNs token updated")
         lastMessage = "Push token updated"
         refreshEventLog()
+        if pendingPairing != nil, pairingInProgress {
+            submitPendingPairingIfReady()
+        }
+        recoverQueuedPushes()
+    }
+
+    @discardableResult
+    func receivePairingURL(_ url: URL) -> Bool {
+        do {
+            pendingPairing = try IOSPairingRequest.parse(url)
+            pairingError = nil
+            pairingInProgress = false
+            return true
+        } catch {
+            recordError(error)
+            return false
+        }
+    }
+
+    func confirmPairing() {
+        guard pendingPairing != nil else { return }
+        pairingInProgress = true
+        pairingError = nil
+        UNUserNotificationCenter.current().requestAuthorization(options: [.alert, .badge, .sound]) {
+            granted, error in
+            Task { @MainActor in
+                if let error {
+                    self.failPairing(error.localizedDescription)
+                    return
+                }
+                guard granted else {
+                    self.failPairing("Notification permission is required to link this iPhone.")
+                    return
+                }
+                UIApplication.shared.registerForRemoteNotifications()
+                if self.pushToken.isEmpty {
+                    self.lastMessage = "Waiting for an APNs push token"
+                } else {
+                    self.submitPendingPairingIfReady()
+                }
+            }
+        }
+    }
+
+    func cancelPairing() {
+        pendingPairing = nil
+        pairingInProgress = false
+        pairingSubmissionInFlight = false
+        pairingError = nil
+    }
+
+    func failPairing(_ message: String) {
+        pairingInProgress = false
+        pairingSubmissionInFlight = false
+        pairingError = message
+        lastMessage = message
+    }
+
+    private func submitPendingPairingIfReady() {
+        guard let pairing = pendingPairing, !pushToken.isEmpty,
+              !pairingSubmissionInFlight else { return }
+        pairingInProgress = true
+        pairingSubmissionInFlight = true
+        pairingError = nil
+        let token = pushToken
+        let deviceName = UIDevice.current.name
+        Task {
+            do {
+                let endpoint = pairing.server
+                    .appendingPathComponent("api")
+                    .appendingPathComponent("leds")
+                    .appendingPathComponent(pairing.channel.uuidString.lowercased())
+                let body: [String: Any] = [
+                    "v": 1,
+                    "type": "ios_registration",
+                    "device": [
+                        "name": deviceName,
+                        "platform": "ios",
+                        "bundle_id": "io.sidepulse.ios",
+                        "push_token": token,
+                    ],
+                ]
+                var request = URLRequest(url: endpoint)
+                request.httpMethod = "POST"
+                request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+                request.httpBody = try JSONSerialization.data(withJSONObject: body)
+                let (_, response) = try await URLSession.shared.data(for: request)
+                guard let httpResponse = response as? HTTPURLResponse,
+                      (200..<300).contains(httpResponse.statusCode) else {
+                    throw URLError(.badServerResponse)
+                }
+                bridgeBaseURL = pairing.server.absoluteString.trimmingCharacters(
+                    in: CharacterSet(charactersIn: "/")
+                )
+                pendingPairing = nil
+                pairingInProgress = false
+                pairingSubmissionInFlight = false
+                lastMessage = "Linked to \(pairing.sender)"
+                EventLog.append("Linked to \(pairing.sender) through \(pairing.server.host ?? "bridge")")
+                refreshEventLog()
+            } catch {
+                failPairing("Could not complete pairing: \(error.localizedDescription)")
+            }
+        }
     }
 
     func refreshFolderStatus() {
@@ -92,6 +286,111 @@ final class AppModel: ObservableObject {
         lastMessage = "\(push.title) - \(status)"
         refreshFolderStatus()
         refreshEventLog()
+    }
+
+    @discardableResult
+    func processPush(_ userInfo: [AnyHashable: Any], source: String) -> Bool {
+        let resolution = PushPayloadResolver.resolve(userInfo: userInfo)
+        return processResolvedPush(resolution, source: source)
+    }
+
+    @discardableResult
+    func processResolvedPush(_ resolution: PushPayloadResolution, source: String) -> Bool {
+        if let eventID = resolution.eventID, processedEventIDs()[eventID] != nil {
+            EventLog.append("Ignored duplicate SidePulse event")
+            refreshEventLog()
+            return true
+        }
+
+        var status: ReceivedPush.WriteStatus = .received
+        var errorMessage: String?
+        if resolution.isUnsupportedPattern {
+            status = .unsupportedPattern
+        } else if let ledText = resolution.resolvedLEDText {
+            if DriveWriter.shared.hasSavedFolder {
+                do {
+                    _ = try DriveWriter.shared.write(ledText)
+                    status = .wrote
+                } catch {
+                    status = .failed
+                    errorMessage = error.localizedDescription
+                }
+            } else {
+                status = .noFolder
+            }
+        }
+
+        recordReceivedPush(
+            ReceivedPush(
+                source: source,
+                title: resolution.displayTitle,
+                body: resolution.displayBody,
+                notificationTitle: resolution.sourceTitle,
+                notificationBody: resolution.sourceBody,
+                imageURL: resolution.imageURL,
+                patternName: resolution.patternName,
+                ledText: resolution.resolvedLEDText,
+                payloadSummary: resolution.payloadSummary,
+                writeStatus: status,
+                errorMessage: errorMessage,
+                eventID: resolution.eventID
+            )
+        )
+        if let eventID = resolution.eventID {
+            markEventProcessed(eventID)
+        }
+        return status != .failed
+    }
+
+    func recoverQueuedPushes() {
+        guard !pushToken.isEmpty, !recoveryInProgress else { return }
+        let now = Date()
+        if let lastRecoveryAttempt, now.timeIntervalSince(lastRecoveryAttempt) < 3 {
+            return
+        }
+        guard let server = URL(string: bridgeBaseURL) else {
+            lastRecoveryStatus = "Invalid bridge URL"
+            return
+        }
+        let endpoint = server
+            .appendingPathComponent("api")
+            .appendingPathComponent("leds")
+            .appendingPathComponent("apns_\(pushToken)")
+            .appendingPathComponent("queued")
+        recoveryInProgress = true
+        lastRecoveryAttempt = now
+        Task {
+            defer { recoveryInProgress = false }
+            do {
+                var request = URLRequest(url: endpoint)
+                request.cachePolicy = .reloadIgnoringLocalCacheData
+                let (data, response) = try await URLSession.shared.data(for: request)
+                guard let httpResponse = response as? HTTPURLResponse,
+                      (200..<300).contains(httpResponse.statusCode),
+                      let entries = try JSONSerialization.jsonObject(with: data) as? [Any] else {
+                    throw URLError(.badServerResponse)
+                }
+                var handled = 0
+                for entry in entries {
+                    let payload: [AnyHashable: Any]
+                    if let object = entry as? [String: Any] {
+                        payload = Dictionary(uniqueKeysWithValues: object.map { (AnyHashable($0.key), $0.value) })
+                    } else if let text = entry as? String {
+                        payload = [AnyHashable("leds"): text]
+                    } else {
+                        continue
+                    }
+                    if processPush(payload, source: "Recovered push") {
+                        handled += 1
+                    }
+                }
+                lastRecoveryStatus = entries.isEmpty ? "Up to date" : "Recovered \(handled)"
+            } catch {
+                lastRecoveryStatus = "Recovery failed"
+                EventLog.append("Push recovery failed: \(error.localizedDescription)")
+                refreshEventLog()
+            }
+        }
     }
 
     func clearReceivedPushes() {
@@ -186,6 +485,24 @@ final class AppModel: ObservableObject {
         if let data = try? JSONEncoder().encode(receivedPushes) {
             UserDefaults.standard.set(data, forKey: Defaults.receivedPushes)
         }
+    }
+
+    private func processedEventIDs() -> [String: TimeInterval] {
+        let stored = UserDefaults.standard.dictionary(forKey: Defaults.processedEventIDs)
+            as? [String: TimeInterval] ?? [:]
+        let cutoff = Date().addingTimeInterval(-24 * 60 * 60).timeIntervalSince1970
+        return stored.filter { $0.value >= cutoff }
+    }
+
+    private func markEventProcessed(_ eventID: String) {
+        var stored = processedEventIDs()
+        stored[eventID] = Date().timeIntervalSince1970
+        if stored.count > 100 {
+            for key in stored.sorted(by: { $0.value < $1.value }).prefix(stored.count - 100).map(\.key) {
+                stored.removeValue(forKey: key)
+            }
+        }
+        UserDefaults.standard.set(stored, forKey: Defaults.processedEventIDs)
     }
 
     private static func loadReceivedPushes() -> [ReceivedPush] {

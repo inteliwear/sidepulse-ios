@@ -99,6 +99,7 @@ struct ReceivedPush: Identifiable, Codable, Hashable {
     var payloadSummary: String
     var writeStatus: WriteStatus
     var errorMessage: String?
+    var eventID: String? = nil
 
     var ledByteCount: Int {
         ledText?.data(using: .utf8)?.count ?? 0
@@ -125,6 +126,7 @@ struct PushPayloadResolution {
     let pattern: LEDPattern?
     let ledText: String?
     let payloadSummary: String
+    let eventID: String?
 
     var resolvedLEDText: String? {
         ledText ?? pattern?.ledText
@@ -182,6 +184,8 @@ enum PushPayloadResolver {
             in: candidates,
             keys: ["image_url", "image-url", "imageURL", "media_url", "media-url"]
         )
+        let eventID = firstString(in: candidates, keys: ["sidepulse_event_id"])?
+            .trimmingCharacters(in: .whitespacesAndNewlines)
 
         return PushPayloadResolution(
             sourceTitle: alert.title,
@@ -190,7 +194,8 @@ enum PushPayloadResolver {
             patternName: requestedPattern,
             pattern: pattern,
             ledText: ledText,
-            payloadSummary: summary(from: payload)
+            payloadSummary: summary(from: payload),
+            eventID: eventID?.isEmpty == false ? eventID : nil
         )
     }
 

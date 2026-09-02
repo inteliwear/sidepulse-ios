@@ -5,6 +5,7 @@ import UserNotifications
 
 @MainActor
 struct ContentView: View {
+    @Environment(\.scenePhase) private var scenePhase
     @StateObject private var model: AppModel
     @State private var isShowingFolderPicker = false
     @State private var isShowingSettings = false
@@ -90,10 +91,24 @@ struct ContentView: View {
                 }
             }
         }
+        .sheet(item: $model.pendingPairing) { pairing in
+            PairingSheet(model: model, pairing: pairing)
+        }
         .onAppear {
             model.refreshFolderStatus()
+            model.recoverQueuedPushes()
             if !model.hasFolderAccess {
                 activeSheet = .folderSetup
+            }
+        }
+        .onChange(of: model.pendingPairing) { pairing in
+            if pairing != nil {
+                activeSheet = nil
+            }
+        }
+        .onChange(of: scenePhase) { phase in
+            if phase == .active {
+                model.recoverQueuedPushes()
             }
         }
     }
@@ -175,6 +190,57 @@ struct ContentView: View {
         } catch {
             model.recordError(error)
         }
+    }
+}
+
+private struct PairingSheet: View {
+    @ObservedObject var model: AppModel
+    let pairing: IOSPairingRequest
+
+    var body: some View {
+        NavigationStack {
+            VStack(spacing: 22) {
+                Spacer()
+                Image(systemName: "link.circle.fill")
+                    .font(.system(size: 58))
+                    .foregroundStyle(.tint)
+                VStack(spacing: 8) {
+                    Text("Link to \(pairing.sender)?")
+                        .font(.title2.weight(.semibold))
+                    Text("This shares your SidePulse push token with \(pairing.sender) through \(pairing.server.host ?? "the selected bridge").")
+                        .multilineTextAlignment(.center)
+                        .foregroundStyle(.secondary)
+                }
+                if let error = model.pairingError {
+                    Text(error)
+                        .font(.footnote)
+                        .foregroundStyle(.red)
+                        .multilineTextAlignment(.center)
+                }
+                Button {
+                    model.confirmPairing()
+                } label: {
+                    HStack {
+                        if model.pairingInProgress {
+                            ProgressView()
+                        }
+                        Text(model.pairingInProgress ? "Linking…" : "Link iPhone")
+                    }
+                    .frame(maxWidth: .infinity)
+                }
+                .buttonStyle(.borderedProminent)
+                .disabled(model.pairingInProgress)
+                Button("Cancel", role: .cancel) {
+                    model.cancelPairing()
+                }
+                .disabled(model.pairingInProgress)
+                Spacer()
+            }
+            .padding(24)
+            .navigationTitle("SidePulse Link")
+            .navigationBarTitleDisplayMode(.inline)
+        }
+        .interactiveDismissDisabled(model.pairingInProgress)
     }
 }
 
@@ -544,9 +610,8 @@ private struct SettingsView: View {
                     Text("No token yet")
                         .foregroundStyle(.secondary)
                 } else {
-                    Text(model.pushToken)
-                        .font(.system(.footnote, design: .monospaced))
-                        .textSelection(.enabled)
+                    Label("Push token available", systemImage: "checkmark.circle.fill")
+                        .foregroundStyle(.green)
 
                     Button {
                         UIPasteboard.general.string = model.pushToken
@@ -554,6 +619,16 @@ private struct SettingsView: View {
                     } label: {
                         Label("Copy Token", systemImage: "doc.on.doc")
                     }
+                }
+            }
+
+            Section("Bridge") {
+                LabeledContent("Server", value: model.bridgeBaseURL)
+                LabeledContent("Recovery", value: model.lastRecoveryStatus)
+                Button {
+                    model.recoverQueuedPushes()
+                } label: {
+                    Label("Check for Missed Pushes", systemImage: "arrow.clockwise")
                 }
             }
 

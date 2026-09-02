@@ -12,7 +12,9 @@ final class AppDelegate: NSObject, UIApplicationDelegate, UNUserNotificationCent
         EventLog.append("App launched; registered for remote notifications")
 
         if let userInfo = launchOptions?[.remoteNotification] as? [AnyHashable: Any] {
-            processNotification(userInfo, source: "Launch notification")
+            Task { @MainActor in
+                AppModel.shared.processPush(userInfo, source: "Launch notification")
+            }
         }
 
         return true
@@ -42,8 +44,10 @@ final class AppDelegate: NSObject, UIApplicationDelegate, UNUserNotificationCent
         didReceiveRemoteNotification userInfo: [AnyHashable: Any],
         fetchCompletionHandler completionHandler: @escaping (UIBackgroundFetchResult) -> Void
     ) {
-        let didHandle = processNotification(userInfo, source: "Background push")
-        completionHandler(didHandle ? .newData : .failed)
+        Task { @MainActor in
+            let didHandle = AppModel.shared.processPush(userInfo, source: "Background push")
+            completionHandler(didHandle ? .newData : .failed)
+        }
     }
 
     func application(
@@ -51,11 +55,19 @@ final class AppDelegate: NSObject, UIApplicationDelegate, UNUserNotificationCent
         open url: URL,
         options: [UIApplication.OpenURLOptionsKey: Any] = [:]
     ) -> Bool {
+        if url.scheme?.lowercased() == "sidepulse", url.host?.lowercased() == "pair" {
+            Task { @MainActor in
+                AppModel.shared.receivePairingURL(url)
+            }
+            return true
+        }
         guard let resolution = PushPayloadResolver.resolve(url: url) else {
             return false
         }
-
-        return processResolvedPayload(resolution, source: "Shortcut URL")
+        Task { @MainActor in
+            AppModel.shared.processResolvedPush(resolution, source: "Shortcut URL")
+        }
+        return true
     }
 
     func userNotificationCenter(
@@ -69,66 +81,11 @@ final class AppDelegate: NSObject, UIApplicationDelegate, UNUserNotificationCent
         _ center: UNUserNotificationCenter,
         didReceive response: UNNotificationResponse
     ) async {
-        processNotification(
-            response.notification.request.content.userInfo,
-            source: "Opened notification"
-        )
-    }
-
-    @discardableResult
-    private func processNotification(_ userInfo: [AnyHashable: Any], source: String) -> Bool {
-        let keys = userInfo.keys.map { String(describing: $0) }.sorted().joined(separator: ",")
-        EventLog.append("\(source) received; keys=[\(keys)]")
-
-        let resolution = PushPayloadResolver.resolve(userInfo: userInfo)
-        return processResolvedPayload(resolution, source: source)
-    }
-
-    @discardableResult
-    private func processResolvedPayload(_ resolution: PushPayloadResolution, source: String) -> Bool {
-        var status: ReceivedPush.WriteStatus = .received
-        var errorMessage: String?
-
-        if resolution.isUnsupportedPattern {
-            status = .unsupportedPattern
-            EventLog.append("\(source) stored unsupported pattern \(resolution.patternName ?? "")")
-        } else if let ledText = resolution.resolvedLEDText {
-            if DriveWriter.shared.hasSavedFolder {
-                do {
-                    let targetURL = try DriveWriter.shared.write(ledText)
-                    status = .wrote
-                    EventLog.append("\(source) wrote \(targetURL.lastPathComponent)")
-                } catch {
-                    status = .failed
-                    errorMessage = error.localizedDescription
-                    EventLog.append("\(source) failed: \(error.localizedDescription)")
-                }
-            } else {
-                status = .noFolder
-                EventLog.append("\(source) stored LED payload; no SidePulse Dot folder selected")
-            }
-        } else {
-            EventLog.append("\(source) stored general push")
+        let _ = await MainActor.run {
+            AppModel.shared.processPush(
+                response.notification.request.content.userInfo,
+                source: "Opened notification"
+            )
         }
-
-        let push = ReceivedPush(
-            source: source,
-            title: resolution.displayTitle,
-            body: resolution.displayBody,
-            notificationTitle: resolution.sourceTitle,
-            notificationBody: resolution.sourceBody,
-            imageURL: resolution.imageURL,
-            patternName: resolution.patternName,
-            ledText: resolution.resolvedLEDText,
-            payloadSummary: resolution.payloadSummary,
-            writeStatus: status,
-            errorMessage: errorMessage
-        )
-
-        Task { @MainActor in
-            AppModel.shared.recordReceivedPush(push)
-        }
-
-        return status != .failed
     }
 }
