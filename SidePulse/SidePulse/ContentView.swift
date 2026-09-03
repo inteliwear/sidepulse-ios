@@ -225,13 +225,16 @@ private struct PairingSheet: View {
         NavigationStack {
             VStack(spacing: 22) {
                 Spacer()
-                Image(systemName: "link.circle.fill")
+                Image(systemName: model.pairingSuccessMessage == nil ? "link.circle.fill" : "checkmark.circle.fill")
                     .font(.system(size: 58))
-                    .foregroundStyle(.tint)
+                    .foregroundStyle(model.pairingSuccessMessage == nil ? Color.accentColor : Color.green)
                 VStack(spacing: 8) {
-                    Text("Link to \(pairing.sender)?")
+                    Text(model.pairingSuccessMessage == nil ? "Link to \(pairing.sender)?" : "iPhone Linked")
                         .font(.title2.weight(.semibold))
-                    Text("This shares your SidePulse push token with \(pairing.sender) through \(pairing.server.host ?? "the selected bridge").")
+                    Text(
+                        model.pairingSuccessMessage
+                            ?? "This shares your SidePulse push token with \(pairing.sender) through \(pairing.server.host ?? "the selected bridge")."
+                    )
                         .multilineTextAlignment(.center)
                         .foregroundStyle(.secondary)
                 }
@@ -241,23 +244,33 @@ private struct PairingSheet: View {
                         .foregroundStyle(.red)
                         .multilineTextAlignment(.center)
                 }
-                Button {
-                    model.confirmPairing()
-                } label: {
-                    HStack {
-                        if model.pairingInProgress {
-                            ProgressView()
-                        }
-                        Text(model.pairingInProgress ? "Linking…" : "Link iPhone")
+                if model.pairingSuccessMessage != nil {
+                    Button {
+                        model.cancelPairing()
+                    } label: {
+                        Text("Done")
+                            .frame(maxWidth: .infinity)
                     }
-                    .frame(maxWidth: .infinity)
+                    .buttonStyle(.borderedProminent)
+                } else {
+                    Button {
+                        model.confirmPairing()
+                    } label: {
+                        HStack {
+                            if model.pairingInProgress {
+                                ProgressView()
+                            }
+                            Text(model.pairingInProgress ? "Linking…" : "Link iPhone")
+                        }
+                        .frame(maxWidth: .infinity)
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .disabled(model.pairingInProgress)
+                    Button("Cancel", role: .cancel) {
+                        model.cancelPairing()
+                    }
+                    .disabled(model.pairingInProgress)
                 }
-                .buttonStyle(.borderedProminent)
-                .disabled(model.pairingInProgress)
-                Button("Cancel", role: .cancel) {
-                    model.cancelPairing()
-                }
-                .disabled(model.pairingInProgress)
                 Spacer()
             }
             .padding(24)

@@ -153,6 +153,7 @@ final class AppModel: ObservableObject {
     @Published var pendingPairing: IOSPairingRequest?
     @Published var pairingInProgress = false
     @Published var pairingError: String?
+    @Published var pairingSuccessMessage: String?
     @Published var pairingNotice: PairingNotice?
     @Published var lastRecoveryStatus = "Not checked"
 
@@ -217,6 +218,7 @@ final class AppModel: ObservableObject {
             EventLog.append("Pairing link received")
             pendingPairing = pairing
             pairingError = nil
+            pairingSuccessMessage = nil
             pairingInProgress = false
             if !pairing.requiresConfirmation {
                 confirmPairing()
@@ -278,6 +280,7 @@ final class AppModel: ObservableObject {
         pairingInProgress = false
         pairingSubmissionInFlight = false
         pairingError = nil
+        pairingSuccessMessage = nil
     }
 
     func failPairing(_ message: String) {
@@ -336,16 +339,12 @@ final class AppModel: ObservableObject {
                 isBridgeLinked = true
                 pushTokenTimeoutTask?.cancel()
                 pushTokenTimeoutTask = nil
-                pendingPairing = nil
                 pairingInProgress = false
                 pairingSubmissionInFlight = false
                 lastMessage = "Linked to \(pairing.sender)"
                 EventLog.append("Linked to \(pairing.sender) through \(pairing.server.host ?? "bridge")")
                 refreshEventLog()
-                pairingNotice = PairingNotice(
-                    title: "iPhone Linked",
-                    message: "SidePulse writes from \(pairing.sender) will now arrive on this iPhone."
-                )
+                pairingSuccessMessage = "SidePulse writes from \(pairing.sender) will now arrive on this iPhone."
             } catch {
                 failPairing("Could not complete pairing: \(error.localizedDescription)")
             }
