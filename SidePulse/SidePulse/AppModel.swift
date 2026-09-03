@@ -113,6 +113,12 @@ struct IOSPairingRequest: Identifiable, Equatable {
     }
 }
 
+struct PairingNotice: Identifiable {
+    let id = UUID()
+    let title: String
+    let message: String
+}
+
 @MainActor
 final class AppModel: ObservableObject {
     static let shared = AppModel()
@@ -147,11 +153,13 @@ final class AppModel: ObservableObject {
     @Published var pendingPairing: IOSPairingRequest?
     @Published var pairingInProgress = false
     @Published var pairingError: String?
+    @Published var pairingNotice: PairingNotice?
     @Published var lastRecoveryStatus = "Not checked"
 
     private var recoveryInProgress = false
     private var lastRecoveryAttempt: Date?
     private var pairingSubmissionInFlight = false
+    private var pushTokenTimeoutTask: Task<Void, Never>?
 
     @Published var lastMessage: String = "Ready"
     @Published var eventLog: [String] = []
@@ -190,6 +198,8 @@ final class AppModel: ObservableObject {
     }
 
     func setPushToken(from deviceToken: Data) {
+        pushTokenTimeoutTask?.cancel()
+        pushTokenTimeoutTask = nil
         pushToken = deviceToken.map { String(format: "%02x", $0) }.joined()
         EventLog.append("APNs token updated")
         lastMessage = "Push token updated"
@@ -204,6 +214,7 @@ final class AppModel: ObservableObject {
     func receivePairingURL(_ url: URL) -> Bool {
         do {
             let pairing = try IOSPairingRequest.parse(url)
+            EventLog.append("Pairing link received")
             pendingPairing = pairing
             pairingError = nil
             pairingInProgress = false
@@ -213,6 +224,10 @@ final class AppModel: ObservableObject {
             return true
         } catch {
             recordError(error)
+            pairingNotice = PairingNotice(
+                title: "Couldn’t Link iPhone",
+                message: error.localizedDescription
+            )
             return false
         }
     }
@@ -235,6 +250,20 @@ final class AppModel: ObservableObject {
                 UIApplication.shared.registerForRemoteNotifications()
                 if self.pushToken.isEmpty {
                     self.lastMessage = "Waiting for an APNs push token"
+                    let channel = self.pendingPairing?.channel
+                    self.pushTokenTimeoutTask?.cancel()
+                    self.pushTokenTimeoutTask = Task { @MainActor [weak self] in
+                        try? await Task.sleep(nanoseconds: 10_000_000_000)
+                        guard !Task.isCancelled, let self,
+                              self.pendingPairing?.channel == channel,
+                              self.pairingInProgress,
+                              self.pushToken.isEmpty else {
+                            return
+                        }
+                        self.failPairing(
+                            "Could not get a push token. Check notification permissions and try again."
+                        )
+                    }
                 } else {
                     self.submitPendingPairingIfReady()
                 }
@@ -243,6 +272,8 @@ final class AppModel: ObservableObject {
     }
 
     func cancelPairing() {
+        pushTokenTimeoutTask?.cancel()
+        pushTokenTimeoutTask = nil
         pendingPairing = nil
         pairingInProgress = false
         pairingSubmissionInFlight = false
@@ -250,10 +281,20 @@ final class AppModel: ObservableObject {
     }
 
     func failPairing(_ message: String) {
+        pushTokenTimeoutTask?.cancel()
+        pushTokenTimeoutTask = nil
         pairingInProgress = false
         pairingSubmissionInFlight = false
         pairingError = message
         lastMessage = message
+    }
+
+    func failRemoteNotificationRegistration(_ error: Error) {
+        if pendingPairing != nil, pairingInProgress {
+            failPairing("Could not register for push notifications: \(error.localizedDescription)")
+        } else {
+            recordError(error)
+        }
     }
 
     private func submitPendingPairingIfReady() {
@@ -293,12 +334,18 @@ final class AppModel: ObservableObject {
                     in: CharacterSet(charactersIn: "/")
                 )
                 isBridgeLinked = true
+                pushTokenTimeoutTask?.cancel()
+                pushTokenTimeoutTask = nil
                 pendingPairing = nil
                 pairingInProgress = false
                 pairingSubmissionInFlight = false
                 lastMessage = "Linked to \(pairing.sender)"
                 EventLog.append("Linked to \(pairing.sender) through \(pairing.server.host ?? "bridge")")
                 refreshEventLog()
+                pairingNotice = PairingNotice(
+                    title: "iPhone Linked",
+                    message: "SidePulse writes from \(pairing.sender) will now arrive on this iPhone."
+                )
             } catch {
                 failPairing("Could not complete pairing: \(error.localizedDescription)")
             }

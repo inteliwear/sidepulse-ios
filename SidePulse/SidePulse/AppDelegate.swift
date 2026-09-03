@@ -35,7 +35,7 @@ final class AppDelegate: NSObject, UIApplicationDelegate, UNUserNotificationCent
     ) {
         EventLog.append("APNs registration failed: \(error.localizedDescription)")
         Task { @MainActor in
-            AppModel.shared.recordError(error)
+            AppModel.shared.failRemoteNotificationRegistration(error)
         }
     }
 

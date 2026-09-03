@@ -104,6 +104,20 @@ struct ContentView: View {
         .sheet(item: $model.pendingPairing) { pairing in
             PairingSheet(model: model, pairing: pairing)
         }
+        .alert(item: $model.pairingNotice) { notice in
+            Alert(
+                title: Text(notice.title),
+                message: Text(notice.message),
+                dismissButton: .default(Text("OK"))
+            )
+        }
+        .onOpenURL { url in
+            guard url.scheme?.lowercased() == "sidepulse",
+                  ["p", "pair"].contains(url.host?.lowercased() ?? "") else {
+                return
+            }
+            model.receivePairingURL(url)
+        }
         .onAppear {
             model.refreshFolderStatus()
             model.recoverQueuedPushes()
