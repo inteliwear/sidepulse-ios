@@ -9,7 +9,7 @@
   </defs>
   <rect width="1024" height="1024" fill="#FAFAFA"/>
   <rect x="132" y="286" width="760" height="452" rx="226" fill="url(#spectrum)"/>
-  <rect x="158" y="312" width="708" height="400" rx="200" fill="#FAFAFA"/>
+  <rect x="166" y="320" width="692" height="384" rx="192" fill="#FAFAFA"/>
   <circle cx="422" cy="512" r="70" fill="#81CFFA"/>
   <circle cx="602" cy="512" r="70" fill="#F2A33C"/>
 </svg>
