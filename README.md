@@ -3,6 +3,8 @@
 SidePulse is owned by InteliWEAR LLC. This repository contains the SidePulse
 iOS app, LED program examples, and push server tools.
 
+[Join the SidePulse iOS beta on TestFlight](https://testflight.apple.com/join/Utw6hs1W).
+
 Main project repository: [inteliwear/sidepulse](https://github.com/inteliwear/sidepulse).
 
 See [the app documentation](SidePulse/README.md) for setup and usage.
