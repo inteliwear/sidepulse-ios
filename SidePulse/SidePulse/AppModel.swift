@@ -1,3 +1,9 @@
+// Copyright (c) 2026 InteliWEAR LLC.
+//
+// This Source Code Form is subject to the terms of the Mozilla Public
+// License, v. 2.0. If a copy of the MPL was not distributed with this
+// file, You can obtain one at https://mozilla.org/MPL/2.0/.
+
 import Foundation
 import UIKit
 import UserNotifications
@@ -150,6 +156,10 @@ final class AppModel: ObservableObject {
         didSet { UserDefaults.standard.set(isBridgeLinked, forKey: Defaults.isBridgeLinked) }
     }
 
+    @Published var hasReceivedRemotePush: Bool {
+        didSet { UserDefaults.standard.set(hasReceivedRemotePush, forKey: Defaults.hasReceivedRemotePush) }
+    }
+
     @Published var pendingPairing: IOSPairingRequest?
     @Published var pairingInProgress = false
     @Published var pairingError: String?
@@ -175,6 +185,7 @@ final class AppModel: ObservableObject {
         static let sharedSecret = "sharedSecret"
         static let bridgeBaseURL = "bridgeBaseURL"
         static let isBridgeLinked = "isBridgeLinked"
+        static let hasReceivedRemotePush = "hasReceivedRemotePush"
         static let receivedPushes = "receivedPushes"
         static let processedEventIDs = "processedEventIDs"
     }
@@ -192,8 +203,11 @@ final class AppModel: ObservableObject {
         self.bridgeBaseURL = UserDefaults.standard.string(forKey: Defaults.bridgeBaseURL)
             ?? "https://bridge.sidepulse.io"
         self.isBridgeLinked = UserDefaults.standard.bool(forKey: Defaults.isBridgeLinked)
+        let savedPushes = Self.loadReceivedPushes()
+        self.hasReceivedRemotePush = UserDefaults.standard.bool(forKey: Defaults.hasReceivedRemotePush)
+            || savedPushes.contains { Self.isRemotePushSource($0.source) }
         self.pendingPairing = nil
-        self.receivedPushes = Self.loadReceivedPushes()
+        self.receivedPushes = savedPushes
         self.eventLog = EventLog.entries()
         refreshFolderStatus()
     }
@@ -388,8 +402,16 @@ final class AppModel: ObservableObject {
 
     @discardableResult
     func processPush(_ userInfo: [AnyHashable: Any], source: String) -> Bool {
+        if !hasReceivedRemotePush {
+            hasReceivedRemotePush = true
+            EventLog.append("Remote push delivery confirmed")
+        }
         let resolution = PushPayloadResolver.resolve(userInfo: userInfo)
         return processResolvedPush(resolution, source: source)
+    }
+
+    var shouldShowLinkInstructions: Bool {
+        !isBridgeLinked && !hasReceivedRemotePush
     }
 
     @discardableResult
@@ -506,6 +528,11 @@ final class AppModel: ObservableObject {
     func clearEventLog() {
         EventLog.clear()
         refreshEventLog()
+    }
+
+    private static func isRemotePushSource(_ source: String) -> Bool {
+        source.localizedCaseInsensitiveContains("push")
+            || source.localizedCaseInsensitiveContains("notification")
     }
 
     var preauthenticatedPostURL: String? {

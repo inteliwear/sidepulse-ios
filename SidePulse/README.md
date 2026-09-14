@@ -15,6 +15,15 @@ The app supports:
 
 The bundle identifier is `io.sidepulse.ios`.
 
+## License and trademarks
+
+Copyright (c) 2026 InteliWEAR LLC. SidePulse is owned by InteliWEAR LLC.
+
+The project is licensed under the [Mozilla Public License 2.0](../LICENSE).
+See the [repository license overview](../README.md#license) for scope and
+source-sharing requirements. The SidePulse name and logos are covered by
+the separate [trademark policy](../TRADEMARKS.md).
+
 ## iOS setup
 
 1. Open `SidePulse.xcodeproj` in Xcode.

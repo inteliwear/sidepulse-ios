@@ -1,3 +1,9 @@
+// Copyright (c) 2026 InteliWEAR LLC.
+//
+// This Source Code Form is subject to the terms of the Mozilla Public
+// License, v. 2.0. If a copy of the MPL was not distributed with this
+// file, You can obtain one at https://mozilla.org/MPL/2.0/.
+
 import AppIntents
 import Foundation
 
@@ -19,7 +25,7 @@ enum SidePulseLEDColor: String, CaseIterable {
         case .red: "#ff0000"
         case .green: "#00ff00"
         case .blue: "#0000ff"
-        case .purple: "#a855f7"
+        case .purple: "#FF00FF"
         case .aqua: "#00e5ff"
         case .ember: "#ff6a00"
         }
@@ -193,7 +199,7 @@ struct PulseLEDsIntent: AppIntent {
         pulseCount = SidePulseLEDProgram.defaultPulseCount
     }
 
-    func perform() async throws -> some IntentResult & ProvidesDialog {
+    func perform() async throws -> some IntentResult {
         let count = SidePulseLEDProgram.bounded(pulseCount)
         let ledColor = color.ledColor
         let program = SidePulseLEDProgram.pulse(color: ledColor, count: count)
@@ -203,7 +209,7 @@ struct PulseLEDsIntent: AppIntent {
             body: "\(count) \(count == 1 ? "pulse" : "pulses")",
             ledText: program
         )
-        return .result(dialog: "Pulsed \(ledColor.displayName) \(count) times.")
+        return .result()
     }
 }
 
@@ -224,7 +230,7 @@ struct BreatheLEDsIntent: AppIntent {
         color = .aqua
     }
 
-    func perform() async throws -> some IntentResult & ProvidesDialog {
+    func perform() async throws -> some IntentResult {
         let ledColor = color.ledColor
         let program = SidePulseLEDProgram.breathe(color: ledColor)
         _ = try DriveWriter.shared.write(program)
@@ -233,7 +239,7 @@ struct BreatheLEDsIntent: AppIntent {
             body: "Repeats until changed",
             ledText: program
         )
-        return .result(dialog: "Breathing \(ledColor.displayName) until changed.")
+        return .result()
     }
 }
 
@@ -245,7 +251,7 @@ struct TurnOffLEDsIntent: AppIntent {
 
     init() {}
 
-    func perform() async throws -> some IntentResult & ProvidesDialog {
+    func perform() async throws -> some IntentResult {
         let program = "off\n"
         _ = try DriveWriter.shared.write(program)
         await recordShortcutWrite(
@@ -253,7 +259,7 @@ struct TurnOffLEDsIntent: AppIntent {
             body: "Turned off SidePulse Dot",
             ledText: program
         )
-        return .result(dialog: "SidePulse Dot is off.")
+        return .result()
     }
 }
 
@@ -276,14 +282,14 @@ struct WriteLEDsIntent: AppIntent {
         self.ledsText = ledsText
     }
 
-    func perform() async throws -> some IntentResult & ProvidesDialog {
+    func perform() async throws -> some IntentResult {
         _ = try DriveWriter.shared.write(ledsText)
         await recordShortcutWrite(
             title: "Custom LEDS.LED",
             body: "Wrote \(ledsText.utf8.count) bytes",
             ledText: ledsText
         )
-        return .result(dialog: "Wrote LEDS.LED to SidePulse Dot.")
+        return .result()
     }
 }
 
@@ -305,8 +311,7 @@ struct SidePulseShortcuts: AppShortcutsProvider {
         AppShortcut(
             intent: PulseLEDsIntent(),
             phrases: [
-                "Pulse \(\.$color) with \(.applicationName)",
-                "Pulse the LEDs with \(.applicationName)"
+                "Pulse \(\.$color) with \(.applicationName)"
             ],
             shortTitle: "Pulse LEDs",
             systemImageName: "waveform.path",
@@ -325,8 +330,7 @@ struct SidePulseShortcuts: AppShortcutsProvider {
         AppShortcut(
             intent: BreatheLEDsIntent(),
             phrases: [
-                "Breathe \(\.$color) with \(.applicationName)",
-                "Breathe the LEDs with \(.applicationName)"
+                "Breathe \(\.$color) with \(.applicationName)"
             ],
             shortTitle: "Breathe LEDs",
             systemImageName: "wind",

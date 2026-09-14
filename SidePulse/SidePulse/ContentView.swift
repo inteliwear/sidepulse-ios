@@ -1,3 +1,9 @@
+// Copyright (c) 2026 InteliWEAR LLC.
+//
+// This Source Code Form is subject to the terms of the Mozilla Public
+// License, v. 2.0. If a copy of the MPL was not distributed with this
+// file, You can obtain one at https://mozilla.org/MPL/2.0/.
+
 import AppIntents
 import SwiftUI
 import UIKit
@@ -30,7 +36,7 @@ struct ContentView: View {
                             .shortcutsLinkStyle(.automaticOutline)
                     }
 
-                    if !model.isBridgeLinked {
+                    if model.shouldShowLinkInstructions {
                         LinkSetupPanel(model: model)
                     }
 
