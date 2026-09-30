@@ -12,6 +12,10 @@ struct PushKeyRecord: Identifiable, Codable, Equatable {
     var suffix: String { String(value.suffix(4)) }
     var maskedKey: String { "…" + suffix }
 
+    func isExpired(at now: Date) -> Bool {
+        totalReceived == 0 && now.timeIntervalSince(createdAt) > 24 * 60 * 60
+    }
+
     func token(for deviceToken: String) -> String {
         deviceToken + "_" + value
     }
@@ -46,12 +50,20 @@ struct PushKeyRegistry: Codable, Equatable {
         records.removeAll { $0.id == id }
     }
 
-    func accepts(_ key: String?) -> Bool {
+    @discardableResult
+    mutating func removeExpiredUnusedKeys(now: Date = Date()) -> [UUID] {
+        let expired = records.filter { $0.isExpired(at: now) }.map(\.id)
+        records.removeAll { $0.isExpired(at: now) }
+        return expired
+    }
+
+    func accepts(_ key: String?, now: Date = Date()) -> Bool {
         guard let key else { return false }
-        return records.contains { $0.value == key }
+        return records.contains { $0.value == key && !$0.isExpired(at: now) }
     }
 
     mutating func receive(key: String?, messageID: String?, now: Date = Date()) -> Receipt {
+        removeExpiredUnusedKeys(now: now)
         guard let key, let index = records.firstIndex(where: { $0.value == key }) else {
             return .rejected
         }

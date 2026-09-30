@@ -909,7 +909,7 @@ private struct SettingsView: View {
             } header: {
                 Text("Active Push Keys")
             } footer: {
-                Text("Each sender has its own key. Remove a key to stop processing that sender’s updates.")
+                Text("Unused tokens expire after 24 hours. Tokens used at least once stay until you remove them. Each sender has its own key; removing it stops that sender’s updates.")
             }
 
             Section("Bridge") {

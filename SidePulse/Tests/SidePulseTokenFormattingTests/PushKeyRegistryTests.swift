@@ -3,6 +3,44 @@ import XCTest
 @testable import SidePulseTokenFormatting
 
 final class PushKeyRegistryTests: XCTestCase {
+    func testUnusedKeyExpiresOnlyAfter24HoursAndCannotReactivate() throws {
+        let createdAt = Date(timeIntervalSince1970: 1_000_000)
+        let deadline = createdAt.addingTimeInterval(24 * 60 * 60)
+        var registry = PushKeyRegistry()
+        let key = registry.issue(name: "Unused", now: createdAt)
+        XCTAssertTrue(registry.accepts(key.value, now: deadline.addingTimeInterval(-1)))
+        XCTAssertTrue(registry.accepts(key.value, now: deadline))
+        XCTAssertTrue(registry.removeExpiredUnusedKeys(now: deadline).isEmpty)
+
+        let expiredAt = deadline.addingTimeInterval(1)
+        XCTAssertFalse(registry.accepts(key.value, now: expiredAt))
+        // A late first update must not turn an expired key into a retained one.
+        XCTAssertEqual(registry.receive(key: key.value, messageID: "late", now: expiredAt), .rejected)
+        XCTAssertTrue(registry.records.isEmpty)
+        registry = try JSONDecoder().decode(PushKeyRegistry.self, from: JSONEncoder().encode(registry))
+        XCTAssertEqual(registry.receive(key: key.value, messageID: "retry", now: expiredAt), .rejected)
+    }
+
+    func testCleanupRetainsUsedAndRecentKeysAcrossReload() throws {
+        let createdAt = Date(timeIntervalSince1970: 1_000_000)
+        let now = createdAt.addingTimeInterval(365 * 24 * 60 * 60)
+        var registry = PushKeyRegistry()
+        let unused = registry.issue(name: "Expired", now: createdAt)
+        let used = registry.issue(name: "Used once", now: createdAt)
+        // A first use at the deadline counts; no receipt ID is required.
+        XCTAssertEqual(registry.receive(key: used.value, messageID: nil,
+                                        now: createdAt.addingTimeInterval(24 * 60 * 60)), .accepted)
+        let recent = registry.issue(name: "Recent", now: now.addingTimeInterval(-60))
+        registry = try JSONDecoder().decode(PushKeyRegistry.self, from: JSONEncoder().encode(registry))
+        XCTAssertEqual(registry.removeExpiredUnusedKeys(now: now), [unused.id])
+        XCTAssertEqual(registry.records.map(\.id), [used.id, recent.id])
+        XCTAssertTrue(registry.accepts(used.value, now: now))
+        XCTAssertEqual(registry.records[0].totalReceived, 1)
+        XCTAssertTrue(registry.removeExpiredUnusedKeys(now: now).isEmpty)
+        registry = try JSONDecoder().decode(PushKeyRegistry.self, from: JSONEncoder().encode(registry))
+        XCTAssertEqual(registry.records.map(\.id), [used.id, recent.id])
+    }
+
     func testAgentLinkContainsCompleteChannelOnlyInFragment() throws {
         var registry = PushKeyRegistry()
         let key = registry.issue(name: "AI agent")

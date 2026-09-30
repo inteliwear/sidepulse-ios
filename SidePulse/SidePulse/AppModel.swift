@@ -217,7 +217,24 @@ final class AppModel: ObservableObject {
     }
 
     func createPushKey(name: String = "Manual sender") -> PushKeyRecord {
-        pushKeys.issue(name: name)
+        removeExpiredPushKeys()
+        return pushKeys.issue(name: name)
+    }
+
+    private func removeExpiredPushKeys() {
+        var updated = pushKeys
+        let expired = updated.removeExpiredUnusedKeys()
+        guard !expired.isEmpty else { return }
+        pushKeys = updated
+        if pushKeys.records.isEmpty {
+            isBridgeLinked = false
+            requiresRelinking = true
+        }
+        if let pairingKeyID, expired.contains(pairingKeyID) {
+            failPairing("The unused pairing key expired. Start pairing again.")
+        }
+        EventLog.append("Expired \(expired.count) unused sender key(s) after 24 hours")
+        refreshEventLog()
     }
 
     func removePushKey(_ id: UUID) {
@@ -235,7 +252,8 @@ final class AppModel: ObservableObject {
     }
 
     func acceptsPush(_ userInfo: [AnyHashable: Any]) -> Bool {
-        pushKeys.accepts(PushPayloadResolver.resolve(userInfo: userInfo).sharedKey)
+        removeExpiredPushKeys()
+        return pushKeys.accepts(PushPayloadResolver.resolve(userInfo: userInfo).sharedKey)
     }
 
     @Published var lastMessage: String = "Ready"
@@ -290,6 +308,16 @@ final class AppModel: ObservableObject {
         self.pendingPairing = nil
         self.receivedPushes = savedPushes
         self.eventLog = EventLog.entries()
+        removeExpiredPushKeys()
+        // Keep an open key list current. Foreground recovery also prunes after
+        // suspension, and authorization checks enforce the deadline immediately.
+        Task { [weak self] in
+            while !Task.isCancelled {
+                do { try await Task.sleep(for: .seconds(60)) } catch { return }
+                guard let self else { return }
+                self.removeExpiredPushKeys()
+            }
+        }
         refreshFolderStatus()
     }
 
@@ -580,6 +608,7 @@ final class AppModel: ObservableObject {
 
     @discardableResult
     func processResolvedPush(_ resolution: PushPayloadResolution, source: String, isRemote: Bool = true) -> Bool {
+        removeExpiredPushKeys()
         let senderID = pushKeys.records.first { $0.value == resolution.sharedKey }?.id
         if isRemote {
             switch pushKeys.receive(key: resolution.sharedKey, messageID: resolution.receiptID) {
@@ -684,6 +713,7 @@ final class AppModel: ObservableObject {
     }
 
     private func clearUnauthorizedNotifications() async {
+        removeExpiredPushKeys()
         let center = UNUserNotificationCenter.current()
         let notifications = await center.deliveredNotifications()
         let identifiers = notifications.compactMap { notification -> String? in
@@ -698,6 +728,7 @@ final class AppModel: ObservableObject {
     }
 
     func recoverQueuedPushes() {
+        removeExpiredPushKeys()
         Task { await clearUnauthorizedNotifications() }
         guard !pushKeys.records.isEmpty else {
             lastRecoveryStatus = "No active senders"
