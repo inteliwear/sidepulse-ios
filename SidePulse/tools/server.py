@@ -11,6 +11,8 @@ import copy
 import html
 import json
 import os
+import re
+import uuid
 from typing import Any
 from urllib.parse import parse_qs
 
@@ -301,6 +303,14 @@ def default_push_type(payload: dict[str, Any]) -> str:
 async def send_apns(device_token: str, payload: dict[str, Any], headers: dict[str, str]) -> APNsResponse:
     client = await get_apns_client()
     try:
+        # Only recognize a suffix after an APNs hex token; legacy raw tokens
+        # remain supported. The URL/envelope token owns sender identity.
+        match = re.fullmatch(r"(?:dev_)?([0-9a-fA-F]{64})_([A-Za-z0-9_-]{1,128})", device_token)
+        if match:
+            device_token = match.group(1)
+            payload = dict(payload)
+            payload["shared_key"] = match.group(2)
+            payload["sidepulse_push_id"] = str(uuid.uuid4())
         return await client.send(device_token, payload, headers=headers)
     except (APNsConfigError, OSError, ValueError) as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc

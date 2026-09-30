@@ -17,6 +17,8 @@ struct ContentView: View {
     @State private var isShowingSettings = false
     @State private var opensSettingsAfterFolderSelection = false
     @State private var activeSheet: ActiveSheet?
+    @StateObject private var library = PatternLibraryStore.shared
+    @State private var playbackNotice: String?
 
     init() {
         _model = StateObject(wrappedValue: AppModel.shared)
@@ -30,11 +32,37 @@ struct ContentView: View {
         NavigationStack {
             ScrollView {
                 VStack(alignment: .leading, spacing: 16) {
-                    HStack {
-                        Spacer()
-                        ShortcutsLink()
-                            .shortcutsLinkStyle(.automaticOutline)
+                    SidePulseBrandHeader { isShowingSettings = true }
+
+                    VStack(spacing: 2) {
+                        SidePulseShortcutsBadge()
+                            .frame(maxWidth: .infinity, minHeight: 76)
+
+                        Link(destination: URL(string: "https://sidepulse.io/setup/dot/recipes")!) {
+                            Text("Shortcuts setup recipes")
+                                .font(.subheadline)
+                                .underline()
+                                .frame(minHeight: 44)
+                        }
                     }
+                    .padding(.bottom, 8)
+
+                    VStack(alignment: .trailing, spacing: 12) {
+                        PatternLibraryPanel(store: library, play: playLibraryPattern)
+
+                        Button {
+                            if let off = LEDPatternCatalog.pattern(named: "off") { write(off) }
+                        } label: {
+                            Label("Turn off LEDs", systemImage: "power")
+                                .font(.subheadline.weight(.medium))
+                                .padding(.horizontal, 16)
+                                .frame(minHeight: 44)
+                                .background(Color(.secondarySystemGroupedBackground), in: Capsule())
+                        }
+                        .buttonStyle(.plain)
+                        .accessibilityHint("Stops the current pattern and turns off both lights on SidePulse Dot")
+                    }
+                    .padding(.bottom, 8)
 
                     if model.shouldShowLinkInstructions {
                         LinkSetupPanel(model: model)
@@ -42,40 +70,31 @@ struct ContentView: View {
 
                     RecentPushesPanel(pushes: latestNotificationPushes)
 
-                    QuickPatternsPanel { pattern in
-                        write(pattern)
-                    }
-
                     LatestReceivedLEDPanel(push: currentLEDPush) { ledText in
                         writeLEDText(ledText)
                     }
                 }
-                .padding(16)
+                .padding(.horizontal, 20)
+                .padding(.vertical, 12)
             }
-            .background(Color(.systemGroupedBackground))
-            .navigationTitle("SidePulse")
-            .toolbar {
-                ToolbarItem(placement: .topBarTrailing) {
-                    Button {
-                        isShowingSettings = true
-                    } label: {
-                        Image(systemName: "gearshape")
-                    }
-                    .accessibilityLabel("Settings")
-                }
-            }
+            .background(PatternStyle.background)
+            .tint(PatternStyle.accent)
+            .navigationTitle("")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar(.hidden, for: .navigationBar)
             .navigationDestination(isPresented: $isShowingSettings) {
                 SettingsView(
                     model: model,
                     requestPushToken: requestPushToken,
                     showFolderPicker: { showFolderPicker() }
                 )
+                .toolbar(.visible, for: .navigationBar)
             }
         }
         .sheet(item: $activeSheet) { sheet in
             switch sheet {
             case .folderSetup:
-                FolderSetupSheet(requiresSelection: !model.hasFolderAccess) {
+                FolderSetupSheet() {
                     showFolderPicker(navigateToSettingsAfterSelection: !model.hasFolderAccess)
                 }
             }
@@ -117,7 +136,31 @@ struct ContentView: View {
                 dismissButton: .default(Text("OK"))
             )
         }
+        .sheet(item: $library.importedPattern) { pattern in
+            PatternEditorView(pattern: pattern, store: library, isImport: true)
+        }
+        .alert("Pattern Library", isPresented: Binding(
+            get: { library.error != nil }, set: { if !$0 { library.error = nil } }
+        )) {
+            Button("OK") { library.error = nil }
+        } message: { Text(library.error ?? "") }
+        .onContinueUserActivity(NSUserActivityTypeBrowsingWeb) { activity in
+            if let url = activity.webpageURL, PatternShareLink.recognizes(url) {
+                activeSheet = nil
+                library.receiveLink(url)
+            }
+        }
         .onOpenURL { url in
+            if PatternShareLink.recognizes(url) {
+                activeSheet = nil
+                library.receiveLink(url)
+                return
+            }
+            if url.isFileURL {
+                activeSheet = nil
+                library.receive(url)
+                return
+            }
             guard url.scheme?.lowercased() == "sidepulse",
                   ["p", "pair"].contains(url.host?.lowercased() ?? "") else {
                 return
@@ -127,24 +170,37 @@ struct ContentView: View {
         .onAppear {
             model.refreshFolderStatus()
             model.recoverQueuedPushes()
-            if !model.hasFolderAccess {
-                activeSheet = .folderSetup
-            }
         }
         .onChange(of: model.pendingPairing) { pairing in
             if pairing != nil {
                 activeSheet = nil
             }
         }
+        .overlay(alignment: .bottom) {
+            if let playbackNotice {
+                Label(playbackNotice, systemImage: "checkmark.circle.fill")
+                    .font(.subheadline.weight(.medium))
+                    .padding().background(.regularMaterial, in: Capsule()).padding()
+                    .accessibilityLabel(playbackNotice)
+            }
+        }
+        .task(id: playbackNotice) {
+            guard playbackNotice != nil else { return }
+            do { try await Task.sleep(for: .seconds(3)); playbackNotice = nil } catch { }
+        }
         .onChange(of: scenePhase) { phase in
             if phase == .active {
                 model.recoverQueuedPushes()
+                library.reload()
             }
         }
     }
 
     private var latestNotificationPushes: [ReceivedPush] {
-        Array(model.receivedPushes.filter(\.hasNotificationText).prefix(5))
+        Array(model.receivedPushes.filter {
+            $0.hasNotificationText && !($0.notificationTitleText ?? $0.title)
+                .localizedCaseInsensitiveContains("Update")
+        }.prefix(5))
     }
 
     private var currentLEDPush: ReceivedPush? {
@@ -173,9 +229,15 @@ struct ContentView: View {
         }
     }
 
+    private func playLibraryPattern(_ pattern: LibraryPattern) {
+        write(LEDPattern(name: pattern.id.uuidString, displayName: pattern.name,
+                         detail: pattern.summary, ledText: pattern.ledText,
+                         tintHex: pattern.steps.first?.left.hex ?? "#FFFFFF"))
+    }
+
     private func write(_ pattern: LEDPattern) {
         let pushBase = ReceivedPush(
-            source: "Quick Pattern",
+            source: "Pattern Library",
             title: pattern.displayName,
             body: pattern.detail,
             patternName: pattern.name,
@@ -198,11 +260,13 @@ struct ContentView: View {
             push.body = "Wrote \(targetURL.lastPathComponent)"
             push.writeStatus = .wrote
             model.recordReceivedPush(push)
+            playbackNotice = pattern.name == "off" ? "Dot turned off" : "Playing \(pattern.displayName)"
         } catch {
             var push = pushBase
             push.writeStatus = .failed
             push.errorMessage = error.localizedDescription
             model.recordReceivedPush(push)
+            library.error = error.localizedDescription
         }
     }
 
@@ -435,6 +499,12 @@ private struct ReceivedPushRow: View {
                         .foregroundStyle(.secondary)
                 }
 
+                if let suffix = push.sharedKeySuffix {
+                    Text("Key …\(suffix)")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+
                 if let body = push.notificationBodyText {
                     Text(body)
                         .font(.footnote)
@@ -468,128 +538,6 @@ private struct ReceivedPushRow: View {
                 }
             }
         }
-    }
-}
-
-private struct QuickPatternsPanel: View {
-    let writePattern: (LEDPattern) -> Void
-    @State private var pulseCount = SidePulseLEDProgram.defaultPulseCount
-    private let columns = [
-        GridItem(.flexible(), spacing: 10),
-        GridItem(.flexible(), spacing: 10)
-    ]
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            Text("Quick Patterns")
-                .font(.headline)
-
-            Button {
-                if let offPattern = LEDPatternCatalog.pattern(named: "off") {
-                    writePattern(offPattern)
-                }
-            } label: {
-                Panel {
-                    HStack(spacing: 12) {
-                        ZStack {
-                            Circle()
-                                .fill(Color(.tertiarySystemFill))
-                            Image(systemName: "power")
-                                .font(.headline)
-                                .foregroundStyle(.secondary)
-                        }
-                        .frame(width: 40, height: 40)
-
-                        VStack(alignment: .leading, spacing: 3) {
-                            Text("Off")
-                                .font(.subheadline.weight(.semibold))
-                                .foregroundStyle(.primary)
-                            Text("Turn off SidePulse Dot")
-                                .font(.caption)
-                                .foregroundStyle(.secondary)
-                        }
-
-                        Spacer()
-                    }
-                    .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
-                }
-            }
-            .buttonStyle(.plain)
-
-            ForEach(QuickPatternEffect.allCases) { effect in
-                VStack(alignment: .leading, spacing: 8) {
-                    Text(effect.displayName)
-                        .font(.footnote.weight(.semibold))
-                        .foregroundStyle(.secondary)
-
-                    if effect == .pulse {
-                        Panel {
-                            Stepper(value: $pulseCount, in: SidePulseLEDProgram.pulseRange) {
-                                HStack {
-                                    Text("Number of pulses")
-                                        .font(.subheadline.weight(.semibold))
-                                    Spacer()
-                                    Text("\(pulseCount)")
-                                        .font(.body.monospacedDigit().weight(.semibold))
-                                        .foregroundStyle(.secondary)
-                                }
-                            }
-                        }
-                    }
-
-                    LazyVGrid(columns: columns, spacing: 10) {
-                        ForEach(SidePulseLEDColor.allCases, id: \.self) { color in
-                            let pattern = effect.pattern(color: color, count: pulseCount)
-                            Button {
-                                writePattern(pattern)
-                            } label: {
-                                PatternButtonLabel(pattern: pattern)
-                            }
-                            .buttonStyle(.plain)
-                        }
-                    }
-                }
-            }
-        }
-    }
-}
-
-private enum QuickPatternEffect: String, CaseIterable, Identifiable {
-    case pulse
-    case breathe
-
-    var id: String { rawValue }
-
-    var displayName: String {
-        switch self {
-        case .pulse: "Pulse"
-        case .breathe: "Breathe"
-        }
-    }
-
-    func pattern(color: SidePulseLEDColor, count: Int) -> LEDPattern {
-        let boundedCount = SidePulseLEDProgram.bounded(count)
-        let ledText: String
-        let detail: String
-
-        switch self {
-        case .pulse:
-            ledText = SidePulseLEDProgram.pulse(color: color, count: boundedCount)
-            detail = "\(boundedCount) \(boundedCount == 1 ? "pulse" : "pulses")"
-        case .breathe:
-            ledText = SidePulseLEDProgram.breathe(color: color)
-            detail = "Repeats until changed"
-        }
-
-        return LEDPattern(
-            name: self == .pulse
-                ? "\(rawValue)_\(color.rawValue)_\(boundedCount)"
-                : "\(rawValue)_\(color.rawValue)",
-            displayName: "\(displayName) \(color.displayName)",
-            detail: detail,
-            ledText: ledText,
-            tintHex: color.hex
-        )
     }
 }
 
@@ -651,36 +599,7 @@ private struct LatestReceivedLEDPanel: View {
     }
 }
 
-private struct PatternButtonLabel: View {
-    let pattern: LEDPattern
-
-    var body: some View {
-        Panel {
-            HStack(spacing: 10) {
-                Circle()
-                    .fill(Color(hex: pattern.tintHex))
-                    .frame(width: 12, height: 12)
-
-                VStack(alignment: .leading, spacing: 3) {
-                    Text(pattern.displayName)
-                        .font(.subheadline.weight(.semibold))
-                        .foregroundStyle(.primary)
-                        .lineLimit(1)
-                    Text(pattern.detail)
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                        .lineLimit(1)
-                }
-
-                Spacer(minLength: 0)
-            }
-            .frame(maxWidth: .infinity, minHeight: 52, alignment: .leading)
-        }
-    }
-}
-
 private struct FolderSetupSheet: View {
-    let requiresSelection: Bool
     let openPicker: () -> Void
     @Environment(\.dismiss) private var dismiss
 
@@ -726,16 +645,11 @@ private struct FolderSetupSheet: View {
             .navigationTitle("Set Up SidePulse Dot")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
-                if !requiresSelection {
-                    ToolbarItem(placement: .cancellationAction) {
-                        Button("Cancel") {
-                            dismiss()
-                        }
-                    }
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Not now") { dismiss() }
                 }
             }
         }
-        .interactiveDismissDisabled(requiresSelection)
     }
 }
 
@@ -743,6 +657,8 @@ private struct SettingsView: View {
     @ObservedObject var model: AppModel
     let requestPushToken: () -> Void
     let showFolderPicker: () -> Void
+    @State private var keyToRemove: PushKeyRecord?
+    @State private var isConfirmingKeyRemoval = false
 
     var body: some View {
         Form {
@@ -792,12 +708,64 @@ private struct SettingsView: View {
                         .foregroundStyle(.green)
 
                     Button {
-                        UIPasteboard.general.string = model.pushToken
-                        model.lastMessage = "Copied push token"
+                        let key = model.createPushKey()
+                        UIPasteboard.general.string = key.token(for: model.pushToken)
+                        model.lastMessage = "Copied token for key \(key.maskedKey)"
                     } label: {
-                        Label("Copy Token", systemImage: "doc.on.doc")
+                        Label("Copy New Token", systemImage: "doc.on.doc")
                     }
                 }
+            }
+
+            Section {
+                if model.activePushKeys.isEmpty {
+                    Text("No active keys")
+                        .foregroundStyle(.secondary)
+                }
+                ForEach(model.activePushKeys) { key in
+                    VStack(alignment: .leading, spacing: 10) {
+                        HStack {
+                            Label(key.maskedKey, systemImage: "key.horizontal")
+                                .font(.system(.headline, design: .monospaced))
+                            Spacer()
+                            Text(key.name)
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                        }
+                        LabeledContent("Last active") {
+                            if let date = key.lastActiveAt {
+                                Text(date, style: .relative)
+                            } else {
+                                Text("Never")
+                            }
+                        }
+                        LabeledContent("Total received", value: key.totalReceived.formatted())
+                        HStack {
+                            Button {
+                                UIPasteboard.general.string = key.token(for: model.pushToken)
+                                model.lastMessage = "Copied token for key \(key.maskedKey)"
+                            } label: {
+                                Label("Copy Token", systemImage: "doc.on.doc")
+                                    .frame(minHeight: 44)
+                            }
+                            .disabled(model.pushToken.isEmpty)
+                            Spacer()
+                            Button(role: .destructive) {
+                                keyToRemove = key
+                                isConfirmingKeyRemoval = true
+                            } label: {
+                                Label("Remove", systemImage: "trash")
+                                    .frame(minHeight: 44)
+                            }
+                        }
+                        .buttonStyle(.borderless)
+                    }
+                    .padding(.vertical, 6)
+                }
+            } header: {
+                Text("Active Push Keys")
+            } footer: {
+                Text("Each sender has its own key. Remove a key to stop processing that sender’s updates.")
             }
 
             Section("Bridge") {
@@ -823,7 +791,7 @@ private struct SettingsView: View {
             Section("Shortcuts") {
                 ShortcutsLink()
 
-                Text("Choose any of six colors. Pulse supports 1–10 repetitions; Breathe repeats continuously until you select another pattern.")
+                Text("Create, edit, preview, and share patterns in Pattern Library. Choose two LED colors and timing for each step, then play once, repeat, or loop continuously. Saved patterns are also available in the Play Pattern shortcut action.")
                     .font(.footnote)
                     .foregroundStyle(.secondary)
             }
@@ -833,7 +801,7 @@ private struct SettingsView: View {
                     .font(.footnote)
                     .foregroundStyle(.secondary)
 
-                Text("1. Get and copy the push token above.\n2. Configure the raw server with that token.\n3. Send JSON to the endpoint below.")
+                Text("1. Copy a new token above.\n2. Configure the raw server with that token, including its key suffix.\n3. Send JSON to the endpoint below.")
                     .font(.footnote)
                     .foregroundStyle(.secondary)
 
@@ -928,6 +896,15 @@ private struct SettingsView: View {
                 }
             }
         }
+        .alert("Remove key?", isPresented: $isConfirmingKeyRemoval, presenting: keyToRemove) { key in
+            Button("Remove", role: .destructive) {
+                model.removePushKey(key.id)
+                keyToRemove = nil
+            }
+            Button("Cancel", role: .cancel) { keyToRemove = nil }
+        } message: { key in
+            Text("Pushes from key \(key.maskedKey) will be ignored. This sender will need a new token to reconnect.")
+        }
         .navigationTitle("Settings")
     }
 
@@ -1012,5 +989,35 @@ private extension Color {
             blue: Double(blue) / 255,
             opacity: 1
         )
+    }
+}
+
+/// Preserve Apple's app-specific navigation beneath the custom badge label.
+private struct SidePulseShortcutsBadge: View {
+    @Environment(\.colorScheme) private var colorScheme
+
+    var body: some View {
+        ShortcutsLink()
+            .shortcutsLinkStyle(colorScheme == .dark ? .darkOutline : .lightOutline)
+            .frame(width: 276, height: 68)
+            .overlay {
+                HStack(spacing: 14) {
+                    Image("ShortcutsBadgeIcon")
+                        .resizable()
+                        .frame(width: 42, height: 42)
+                        .clipShape(RoundedRectangle(cornerRadius: 10))
+                    Text("SidePulse in Shortcuts")
+                        .font(.system(size: 18, weight: .semibold))
+                }
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .background(colorScheme == .dark ? Color.black : .white, in: RoundedRectangle(cornerRadius: 17))
+                .overlay {
+                    RoundedRectangle(cornerRadius: 17)
+                        .strokeBorder(Color.primary.opacity(0.28), lineWidth: 1)
+                }
+                .allowsHitTesting(false)
+                .accessibilityHidden(true)
+            }
+            .accessibilityLabel("SidePulse in Shortcuts")
     }
 }

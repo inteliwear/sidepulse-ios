@@ -17,6 +17,15 @@
 		9F0000010000000000000008 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 9F0000010000000000000108 /* Assets.xcassets */; };
 		9F0000010000000000000009 /* EventLog.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9F0000010000000000000112 /* EventLog.swift */; };
 		9F0000010000000000000010 /* PushPayload.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9F0000010000000000000113 /* PushPayload.swift */; };
+		9F0000010000000000000011 /* PushTokenFormatter.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9F0000010000000000000114 /* PushTokenFormatter.swift */; };
+		9F0000010000000000000012 /* PairingRegistrationGate.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9F0000010000000000000115 /* PairingRegistrationGate.swift */; };
+		9F0000010000000000000020 /* PatternLibrary.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9F0000010000000000000120 /* PatternLibrary.swift */; };
+		9F0000010000000000000021 /* PatternLibraryViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9F0000010000000000000121 /* PatternLibraryViews.swift */; };
+		9F0000010000000000000022 /* PatternLibraryIntent.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9F0000010000000000000122 /* PatternLibraryIntent.swift */; };
+		9F0000010000000000000023 /* PatternPreviewWeb in Resources */ = {isa = PBXBuildFile; fileRef = 9F0000010000000000000123; };
+		9F0000010000000000000024 /* PushKeyRegistry.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9F0000010000000000000124 /* PushKeyRegistry.swift */; };
+		9F0000010000000000000030 /* PatternThumbnailRenderer.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9F0000010000000000000130; };
+		9F0000010000000000000031 /* PatternThumbnailSampler.mm in Sources */ = {isa = PBXBuildFile; fileRef = 9F0000010000000000000131; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -33,6 +42,15 @@
 		9F0000010000000000000111 /* SidePulse.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = SidePulse.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		9F0000010000000000000112 /* EventLog.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EventLog.swift; sourceTree = "<group>"; };
 		9F0000010000000000000113 /* PushPayload.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PushPayload.swift; sourceTree = "<group>"; };
+		9F0000010000000000000114 /* PushTokenFormatter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PushTokenFormatter.swift; sourceTree = "<group>"; };
+		9F0000010000000000000115 /* PairingRegistrationGate.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PairingRegistrationGate.swift; sourceTree = "<group>"; };
+		9F0000010000000000000120 /* PatternLibrary.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PatternLibrary.swift; sourceTree = "<group>"; };
+		9F0000010000000000000121 /* PatternLibraryViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PatternLibraryViews.swift; sourceTree = "<group>"; };
+		9F0000010000000000000122 /* PatternLibraryIntent.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PatternLibraryIntent.swift; sourceTree = "<group>"; };
+		9F0000010000000000000123 /* PatternPreviewWeb */ = {isa = PBXFileReference; lastKnownFileType = folder; path = PatternPreviewWeb; sourceTree = "<group>"; };
+		9F0000010000000000000124 /* PushKeyRegistry.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PushKeyRegistry.swift; sourceTree = "<group>"; };
+		9F0000010000000000000130 /* PatternThumbnailRenderer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PatternThumbnailRenderer.swift; sourceTree = "<group>"; };
+		9F0000010000000000000131 /* PatternThumbnailSampler.mm */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.objcpp; path = PatternThumbnailSampler.mm; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -57,6 +75,12 @@
 		9F0000010000000000000302 /* SidePulse */ = {
 			isa = PBXGroup;
 			children = (
+				9F0000010000000000000123 /* PatternPreviewWeb */,
+				9F0000010000000000000130 /* PatternThumbnailRenderer.swift */,
+				9F0000010000000000000131 /* PatternThumbnailSampler.mm */,
+				9F0000010000000000000120 /* PatternLibrary.swift */,
+				9F0000010000000000000121 /* PatternLibraryViews.swift */,
+				9F0000010000000000000122 /* PatternLibraryIntent.swift */,
 				9F0000010000000000000101 /* SidePulseApp.swift */,
 				9F0000010000000000000102 /* ContentView.swift */,
 				9F0000010000000000000103 /* AppModel.swift */,
@@ -64,6 +88,9 @@
 				9F0000010000000000000105 /* AppDelegate.swift */,
 				9F0000010000000000000112 /* EventLog.swift */,
 				9F0000010000000000000113 /* PushPayload.swift */,
+				9F0000010000000000000114 /* PushTokenFormatter.swift */,
+				9F0000010000000000000124 /* PushKeyRegistry.swift */,
+				9F0000010000000000000115 /* PairingRegistrationGate.swift */,
 				9F0000010000000000000106 /* FolderPicker.swift */,
 				9F0000010000000000000107 /* WriteLEDsIntent.swift */,
 				9F0000010000000000000108 /* Assets.xcassets */,
@@ -140,6 +167,7 @@
 			buildActionMask = 2147483647;
 			files = (
 				9F0000010000000000000008 /* Assets.xcassets in Resources */,
+				9F0000010000000000000023 /* PatternPreviewWeb in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -150,6 +178,11 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				9F0000010000000000000030 /* PatternThumbnailRenderer.swift in Sources */,
+				9F0000010000000000000031 /* PatternThumbnailSampler.mm in Sources */,
+				9F0000010000000000000020 /* PatternLibrary.swift in Sources */,
+				9F0000010000000000000021 /* PatternLibraryViews.swift in Sources */,
+				9F0000010000000000000022 /* PatternLibraryIntent.swift in Sources */,
 				9F0000010000000000000001 /* SidePulseApp.swift in Sources */,
 				9F0000010000000000000002 /* ContentView.swift in Sources */,
 				9F0000010000000000000003 /* AppModel.swift in Sources */,
@@ -157,6 +190,9 @@
 				9F0000010000000000000005 /* AppDelegate.swift in Sources */,
 				9F0000010000000000000009 /* EventLog.swift in Sources */,
 				9F0000010000000000000010 /* PushPayload.swift in Sources */,
+				9F0000010000000000000011 /* PushTokenFormatter.swift in Sources */,
+				9F0000010000000000000024 /* PushKeyRegistry.swift in Sources */,
+				9F0000010000000000000012 /* PairingRegistrationGate.swift in Sources */,
 				9F0000010000000000000006 /* FolderPicker.swift in Sources */,
 				9F0000010000000000000007 /* WriteLEDsIntent.swift in Sources */,
 			);
@@ -306,9 +342,11 @@
 				);
 				MARKETING_VERSION = 1.0;
 				PRODUCT_BUNDLE_IDENTIFIER = io.sidepulse.ios;
+				SIDEPULSE_APNS_ENVIRONMENT = development;
 				PRODUCT_NAME = SidePulse;
 				SWIFT_EMIT_LOC_STRINGS = YES;
 				SWIFT_VERSION = 5.0;
+				SWIFT_OBJC_BRIDGING_HEADER = "SidePulse/SidePulse-Bridging-Header.h";
 				TARGETED_DEVICE_FAMILY = "1,2";
 			};
 			name = Debug;
@@ -339,9 +377,11 @@
 				);
 				MARKETING_VERSION = 1.0;
 				PRODUCT_BUNDLE_IDENTIFIER = io.sidepulse.ios;
+				SIDEPULSE_APNS_ENVIRONMENT = production;
 				PRODUCT_NAME = SidePulse;
 				SWIFT_EMIT_LOC_STRINGS = YES;
 				SWIFT_VERSION = 5.0;
+				SWIFT_OBJC_BRIDGING_HEADER = "SidePulse/SidePulse-Bridging-Header.h";
 				TARGETED_DEVICE_FAMILY = "1,2";
 			};
 			name = Release;

@@ -1,0 +1,41 @@
+{
+  "format": "io.sidepulse.pattern",
+  "version": 1,
+  "pattern": {
+    "id": "477bd42c-80e9-4793-94be-fac7b8cd41b8",
+    "name": "Sunset",
+    "repetitions": 0,
+    "steps": [
+      {
+        "id": "9740bac2-a50a-492f-82ee-a3e7ccff0a8b",
+        "left": {
+          "red": 255,
+          "green": 70,
+          "blue": 0
+        },
+        "right": {
+          "red": 110,
+          "green": 0,
+          "blue": 255
+        },
+        "durationMS": 1800,
+        "effect": "pulse"
+      },
+      {
+        "id": "ed4f7a97-f0c0-456e-a5b6-f05128d501c6",
+        "left": {
+          "red": 0,
+          "green": 0,
+          "blue": 0
+        },
+        "right": {
+          "red": 0,
+          "green": 0,
+          "blue": 0
+        },
+        "durationMS": 400,
+        "effect": "hold"
+      }
+    ]
+  }
+}

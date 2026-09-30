@@ -118,6 +118,22 @@ class ServerTestCase(unittest.TestCase):
         self.assertEqual(call["headers"]["apns-collapse-id"], "pulse-status")
         self.assertEqual(call["headers"]["apns-expiration"], "0")
 
+    def test_suffixed_token_supplies_authoritative_sender_metadata(self) -> None:
+        token = "ab" * 32
+        with TestClient(app) as client:
+            for prefix in ("", "dev_"):
+                response = client.post(
+                    "/v1/push",
+                    headers={"Authorization": "Bearer secret"},
+                    json={"device_token": prefix + token + "_CaseSensitive_1234",
+                          "pattern": "green_pulse_2", "payload": {"shared_key": "spoofed"}},
+                )
+                self.assertEqual(response.status_code, 200)
+                call = self.fake.calls[-1]
+                self.assertEqual(call["device_token"], token)
+                self.assertEqual(call["payload"]["shared_key"], "CaseSensitive_1234")
+                self.assertTrue(call["payload"]["sidepulse_push_id"])
+
     def test_leds_led_payload_alias(self) -> None:
         with TestClient(app) as client:
             response = client.post(

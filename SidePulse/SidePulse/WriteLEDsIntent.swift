@@ -180,8 +180,8 @@ private func recordShortcutWrite(title: String, body: String, ledText: String) {
 
 @available(iOS 16.0, *)
 struct PulseLEDsIntent: AppIntent {
-    static var title: LocalizedStringResource = "Pulse SidePulse LEDs"
-    static var description = IntentDescription("Pulses the SidePulse Dot in a chosen color.")
+    static var title: LocalizedStringResource = "Blink SidePulse LEDs"
+    static var description = IntentDescription("Blinks or flashes the SidePulse Dot LEDs in a chosen color.")
     static var openAppWhenRun = false
 
     @Parameter(title: "Color", default: .red)
@@ -191,7 +191,7 @@ struct PulseLEDsIntent: AppIntent {
     var pulseCount: Int
 
     static var parameterSummary: some ParameterSummary {
-        Summary("Pulse \(\.$color) \(\.$pulseCount) times")
+        Summary("Blink \(\.$color) \(\.$pulseCount) times")
     }
 
     init() {
@@ -293,16 +293,59 @@ struct WriteLEDsIntent: AppIntent {
     }
 }
 
+@available(iOS 16.0, *)
+struct UpdateLEDsFromServerIntent: AppIntent {
+    static var title: LocalizedStringResource = "Update SidePulse LEDs from Server"
+    static var description = IntentDescription(
+        "Downloads pending LED updates from the SidePulse server and writes the latest update to the SidePulse Dot."
+    )
+    static var openAppWhenRun = false
+
+    init() {}
+
+    func perform() async throws -> some IntentResult {
+        do {
+            _ = try await AppModel.shared.updateLEDsFromServer()
+        } catch {
+            // This action often runs in a notification automation. Keep setup
+            // and network failures in diagnostics instead of creating alerts.
+            EventLog.append("Server update skipped: \(error.localizedDescription)")
+            await AppModel.shared.refreshEventLog()
+        }
+        return .result()
+    }
+}
+
 @available(iOS 17.0, *)
 struct SidePulseShortcuts: AppShortcutsProvider {
     static var shortcutTileColor: ShortcutTileColor = .grayBlue
 
     static var appShortcuts: [AppShortcut] {
         AppShortcut(
+            intent: PlaySavedPatternIntent(),
+            phrases: ["Play a pattern with \(.applicationName)", "Play \(\.$pattern) with \(.applicationName)"],
+            shortTitle: "Play Pattern",
+            systemImageName: "sparkles",
+            parameterPresentation: ParameterPresentation(
+                for: \.$pattern,
+                summary: Summary("Play \(\.$pattern)")
+            ) {
+                OptionsCollection(
+                    SavedPatternOptionsProvider(),
+                    title: "Pattern Library",
+                    systemImageName: "square.stack.3d.up"
+                )
+            }
+        )
+
+        AppShortcut(
             intent: TurnOffLEDsIntent(),
             phrases: [
                 "Turn off \(.applicationName)",
-                "Switch off \(.applicationName) LEDs"
+                "Turn off \(.applicationName) lights",
+                "Switch off \(.applicationName) LEDs",
+                "Stop \(.applicationName) LEDs",
+                "Clear \(.applicationName) LEDs"
             ],
             shortTitle: "Turn Off LEDs",
             systemImageName: "power"
@@ -311,17 +354,21 @@ struct SidePulseShortcuts: AppShortcutsProvider {
         AppShortcut(
             intent: PulseLEDsIntent(),
             phrases: [
+                "Blink \(\.$color) with \(.applicationName)",
+                "Blink \(.applicationName) \(\.$color)",
+                "Flash \(\.$color) with \(.applicationName)",
+                "Flash \(.applicationName) lights \(\.$color)",
                 "Pulse \(\.$color) with \(.applicationName)"
             ],
-            shortTitle: "Pulse LEDs",
+            shortTitle: "Blink LEDs",
             systemImageName: "waveform.path",
             parameterPresentation: ParameterPresentation(
                 for: \.$color,
-                summary: Summary("Pulse \(\.$color)")
+                summary: Summary("Blink \(\.$color)")
             ) {
                 OptionsCollection(
                     PulseColorOptionsProvider(),
-                    title: "Pulse LEDs",
+                    title: "Blink LEDs",
                     systemImageName: "circle.grid.2x1.fill"
                 )
             }
@@ -330,7 +377,9 @@ struct SidePulseShortcuts: AppShortcutsProvider {
         AppShortcut(
             intent: BreatheLEDsIntent(),
             phrases: [
-                "Breathe \(\.$color) with \(.applicationName)"
+                "Breathe \(\.$color) with \(.applicationName)",
+                "Make \(.applicationName) breathe \(\.$color)",
+                "Glow \(\.$color) with \(.applicationName)"
             ],
             shortTitle: "Breathe LEDs",
             systemImageName: "wind",
@@ -350,10 +399,24 @@ struct SidePulseShortcuts: AppShortcutsProvider {
             intent: WriteLEDsIntent(),
             phrases: [
                 "Write \(.applicationName) LEDs",
-                "Send \(.applicationName) LEDs"
+                "Send \(.applicationName) LEDs",
+                "Program \(.applicationName) LEDs",
+                "Set \(.applicationName) lights"
             ],
             shortTitle: "Write LEDs",
             systemImageName: "externaldrive"
+        )
+
+        AppShortcut(
+            intent: UpdateLEDsFromServerIntent(),
+            phrases: [
+                "Update \(.applicationName) LEDs from the server",
+                "Refresh \(.applicationName) LEDs",
+                "Pull the latest \(.applicationName) LEDs",
+                "Get LED updates with \(.applicationName)"
+            ],
+            shortTitle: "Update from Server",
+            systemImageName: "arrow.clockwise"
         )
     }
 }

@@ -125,6 +125,31 @@ struct PairingNotice: Identifiable {
     let message: String
 }
 
+struct ServerLEDUpdateResult {
+    let queuedCount: Int
+    let handledCount: Int
+}
+
+enum ServerLEDUpdateError: LocalizedError {
+    case missingPushToken
+    case noFolderSelected
+    case invalidBridgeURL
+    case invalidResponse
+
+    var errorDescription: String? {
+        switch self {
+        case .missingPushToken:
+            return "SidePulse does not have a push token yet. Open the app and try again."
+        case .noFolderSelected:
+            return "Select the SidePulse Dot folder in the app before updating the LEDs."
+        case .invalidBridgeURL:
+            return "The saved SidePulse bridge URL is invalid."
+        case .invalidResponse:
+            return "The SidePulse server returned an invalid response."
+        }
+    }
+}
+
 @MainActor
 final class AppModel: ObservableObject {
     static let shared = AppModel()
@@ -132,6 +157,7 @@ final class AppModel: ObservableObject {
     @Published var pushToken: String {
         didSet { UserDefaults.standard.set(pushToken, forKey: Defaults.pushToken) }
     }
+    @Published private(set) var registrationReadiness: APNsRegistrationReadiness = .cached
 
     @Published var selectedFolderPath: String = "No USB folder selected"
     @Published var hasFolderAccess: Bool = false
@@ -156,6 +182,10 @@ final class AppModel: ObservableObject {
         didSet { UserDefaults.standard.set(isBridgeLinked, forKey: Defaults.isBridgeLinked) }
     }
 
+    @Published private(set) var requiresRelinking: Bool {
+        didSet { UserDefaults.standard.set(requiresRelinking, forKey: Defaults.requiresRelinking) }
+    }
+
     @Published var hasReceivedRemotePush: Bool {
         didSet { UserDefaults.standard.set(hasReceivedRemotePush, forKey: Defaults.hasReceivedRemotePush) }
     }
@@ -169,8 +199,44 @@ final class AppModel: ObservableObject {
 
     private var recoveryInProgress = false
     private var lastRecoveryAttempt: Date?
-    private var pairingSubmissionInFlight = false
+    private var recoveryWaiters: [CheckedContinuation<Void, Never>] = []
     private var pushTokenTimeoutTask: Task<Void, Never>?
+    private var pairingRegistration = PairingRegistrationGate()
+    private var linkedPushToken: String
+    private var pairingKeyID: UUID?
+    @Published private var pushKeys: PushKeyRegistry {
+        didSet {
+            if let data = try? JSONEncoder().encode(pushKeys) {
+                UserDefaults.standard.set(data, forKey: Defaults.pushKeys)
+            }
+        }
+    }
+
+    var activePushKeys: [PushKeyRecord] {
+        pushKeys.records.sorted { ($0.lastActiveAt ?? $0.createdAt) > ($1.lastActiveAt ?? $1.createdAt) }
+    }
+
+    func createPushKey(name: String = "Manual sender") -> PushKeyRecord {
+        pushKeys.issue(name: name)
+    }
+
+    func removePushKey(_ id: UUID) {
+        guard let key = pushKeys.records.first(where: { $0.id == id }) else { return }
+        pushKeys.remove(id: id)
+        if pushKeys.records.isEmpty {
+            isBridgeLinked = false
+            requiresRelinking = true
+        }
+        if pairingKeyID == id { failPairing("The pairing key was removed. Start pairing again.") }
+        lastMessage = "Removed key \(key.maskedKey)"
+        EventLog.append(lastMessage)
+        refreshEventLog()
+        Task { await clearUnauthorizedNotifications() }
+    }
+
+    func acceptsPush(_ userInfo: [AnyHashable: Any]) -> Bool {
+        pushKeys.accepts(PushPayloadResolver.resolve(userInfo: userInfo).sharedKey)
+    }
 
     @Published var lastMessage: String = "Ready"
     @Published var eventLog: [String] = []
@@ -180,18 +246,32 @@ final class AppModel: ObservableObject {
 
     private enum Defaults {
         static let pushToken = "pushToken"
+        static let linkedPushToken = "linkedPushToken"
         static let ledText = "ledText"
         static let serverBaseURL = "serverBaseURL"
         static let sharedSecret = "sharedSecret"
         static let bridgeBaseURL = "bridgeBaseURL"
         static let isBridgeLinked = "isBridgeLinked"
+        static let requiresRelinking = "requiresRelinking"
         static let hasReceivedRemotePush = "hasReceivedRemotePush"
         static let receivedPushes = "receivedPushes"
         static let processedEventIDs = "processedEventIDs"
+        static let pushKeys = "pushKeys"
     }
 
     private init() {
-        self.pushToken = UserDefaults.standard.string(forKey: Defaults.pushToken) ?? ""
+        let cachedPushToken = UserDefaults.standard.string(forKey: Defaults.pushToken) ?? ""
+        let savedLinkedPushToken = UserDefaults.standard.string(forKey: Defaults.linkedPushToken) ?? ""
+        let savedIsBridgeLinked = UserDefaults.standard.bool(forKey: Defaults.isBridgeLinked)
+        let savedRequiresRelinking = UserDefaults.standard.bool(forKey: Defaults.requiresRelinking)
+        let savedKeys = UserDefaults.standard.data(forKey: Defaults.pushKeys)
+            .flatMap { try? JSONDecoder().decode(PushKeyRegistry.self, from: $0) } ?? PushKeyRegistry()
+        let needsKeyPairing = savedIsBridgeLinked && savedKeys.records.isEmpty
+        self.pushKeys = savedKeys
+        self.pushToken = cachedPushToken
+        self.linkedPushToken = savedIsBridgeLinked && savedLinkedPushToken.isEmpty
+            ? cachedPushToken
+            : savedLinkedPushToken
         self.ledText = UserDefaults.standard.string(forKey: Defaults.ledText) ?? """
         off
         #404040 1.4s pulse
@@ -202,7 +282,8 @@ final class AppModel: ObservableObject {
         self.sharedSecret = UserDefaults.standard.string(forKey: Defaults.sharedSecret) ?? ""
         self.bridgeBaseURL = UserDefaults.standard.string(forKey: Defaults.bridgeBaseURL)
             ?? "https://bridge.sidepulse.io"
-        self.isBridgeLinked = UserDefaults.standard.bool(forKey: Defaults.isBridgeLinked)
+        self.isBridgeLinked = savedIsBridgeLinked && !savedRequiresRelinking && !needsKeyPairing
+        self.requiresRelinking = savedRequiresRelinking || needsKeyPairing
         let savedPushes = Self.loadReceivedPushes()
         self.hasReceivedRemotePush = UserDefaults.standard.bool(forKey: Defaults.hasReceivedRemotePush)
             || savedPushes.contains { Self.isRemotePushSource($0.source) }
@@ -215,11 +296,49 @@ final class AppModel: ObservableObject {
     func setPushToken(from deviceToken: Data) {
         pushTokenTimeoutTask?.cancel()
         pushTokenTimeoutTask = nil
-        pushToken = deviceToken.map { String(format: "%02x", $0) }.joined()
+        let environment: APNsEnvironment
+        do {
+            environment = try APNsEnvironment.configured(
+                Bundle.main.object(forInfoDictionaryKey: "SidePulseAPNSEnvironment") as? String
+            )
+        } catch {
+            registrationReadiness = .failed
+            if pairingRegistration.activeAttemptID != nil, pairingInProgress {
+                failPairing(error.localizedDescription, registrationFailed: true)
+            } else {
+                pairingNotice = PairingNotice(title: "Build Configuration Error", message: error.localizedDescription)
+            }
+            return
+        }
+        let previousToken = pushToken
+        let formattedToken = PushTokenFormatter.format(deviceToken, environment: environment)
+        pushToken = formattedToken
+        let tokenChangedDuringSubmission = pairingRegistration.registrationSucceeded(
+            currentToken: formattedToken
+        )
+        registrationReadiness = pairingRegistration.readiness
+        if PushLinkPolicy.requiresRelinking(
+            isLinked: isBridgeLinked,
+            linkedToken: linkedPushToken,
+            freshToken: formattedToken
+        ) {
+            let shouldShowRelinkNotice = !requiresRelinking
+            requiresRelinking = true
+            isBridgeLinked = false
+            pairingSuccessMessage = nil
+            if shouldShowRelinkNotice {
+                pairingNotice = PairingNotice(
+                    title: "Link SidePulse Again",
+                    message: "The push token changed. Start a new pairing from your desktop so it receives the current token."
+                )
+            }
+        }
         EventLog.append("APNs token updated")
-        lastMessage = "Push token updated"
+        lastMessage = previousToken == formattedToken ? "Push token refreshed" : "Push token updated"
         refreshEventLog()
-        if pendingPairing != nil, pairingInProgress {
+        if tokenChangedDuringSubmission {
+            failPairing("The push token changed while linking. Start pairing again so the desktop receives the current token.")
+        } else if pairingRegistration.activeAttemptID != nil, pairingInProgress {
             submitPendingPairingIfReady()
         }
         recoverQueuedPushes()
@@ -229,6 +348,7 @@ final class AppModel: ObservableObject {
     func receivePairingURL(_ url: URL) -> Bool {
         do {
             let pairing = try IOSPairingRequest.parse(url)
+            supersedePairingAttempt()
             EventLog.append("Pairing link received")
             pendingPairing = pairing
             pairingError = nil
@@ -250,11 +370,24 @@ final class AppModel: ObservableObject {
 
     func confirmPairing() {
         guard pendingPairing != nil else { return }
+        do {
+            _ = try APNsEnvironment.configured(
+                Bundle.main.object(forInfoDictionaryKey: "SidePulseAPNSEnvironment") as? String
+            )
+        } catch {
+            registrationReadiness = .failed
+            failPairing(error.localizedDescription)
+            return
+        }
+        supersedePairingAttempt()
+        let attemptID = pairingRegistration.beginAttempt()
+        registrationReadiness = pairingRegistration.readiness
         pairingInProgress = true
         pairingError = nil
         UNUserNotificationCenter.current().requestAuthorization(options: [.alert, .badge, .sound]) {
             granted, error in
             Task { @MainActor in
+                guard self.pairingRegistration.activeAttemptID == attemptID, self.pairingInProgress else { return }
                 if let error {
                     self.failPairing(error.localizedDescription)
                     return
@@ -263,65 +396,75 @@ final class AppModel: ObservableObject {
                     self.failPairing("Notification permission is required to link this iPhone.")
                     return
                 }
+                guard self.pairingRegistration.registrationRequested(for: attemptID) else { return }
+                self.registrationReadiness = self.pairingRegistration.readiness
+                self.lastMessage = "Waiting for a fresh APNs registration"
                 UIApplication.shared.registerForRemoteNotifications()
-                if self.pushToken.isEmpty {
-                    self.lastMessage = "Waiting for an APNs push token"
-                    let channel = self.pendingPairing?.channel
-                    self.pushTokenTimeoutTask?.cancel()
-                    self.pushTokenTimeoutTask = Task { @MainActor [weak self] in
-                        try? await Task.sleep(nanoseconds: 10_000_000_000)
-                        guard !Task.isCancelled, let self,
-                              self.pendingPairing?.channel == channel,
-                              self.pairingInProgress,
-                              self.pushToken.isEmpty else {
-                            return
-                        }
-                        self.failPairing(
-                            "Could not get a push token. Check notification permissions and try again."
-                        )
-                    }
-                } else {
-                    self.submitPendingPairingIfReady()
+                self.pushTokenTimeoutTask = Task { @MainActor [weak self] in
+                    try? await Task.sleep(nanoseconds: 20_000_000_000)
+                    guard !Task.isCancelled, let self,
+                          self.pairingRegistration.activeAttemptID == attemptID,
+                          self.pairingInProgress,
+                          self.registrationReadiness != .ready else { return }
+                    self.failPairing(
+                        "APNs registration did not finish. Check your network connection and notification settings, then try pairing again.",
+                        registrationFailed: true
+                    )
                 }
             }
         }
     }
 
     func cancelPairing() {
-        pushTokenTimeoutTask?.cancel()
-        pushTokenTimeoutTask = nil
+        supersedePairingAttempt()
         pendingPairing = nil
         pairingInProgress = false
-        pairingSubmissionInFlight = false
         pairingError = nil
         pairingSuccessMessage = nil
     }
 
-    func failPairing(_ message: String) {
+    func failPairing(_ message: String, registrationFailed: Bool = false) {
+        discardPendingPairingKey()
         pushTokenTimeoutTask?.cancel()
         pushTokenTimeoutTask = nil
         pairingInProgress = false
-        pairingSubmissionInFlight = false
+        if let attemptID = pairingRegistration.activeAttemptID {
+            if registrationFailed {
+                _ = pairingRegistration.failRegistration(for: attemptID)
+            } else {
+                pairingRegistration.cancel(attemptID)
+            }
+            registrationReadiness = pairingRegistration.readiness
+        }
         pairingError = message
         lastMessage = message
     }
 
     func failRemoteNotificationRegistration(_ error: Error) {
-        if pendingPairing != nil, pairingInProgress {
-            failPairing("Could not register for push notifications: \(error.localizedDescription)")
+        if pendingPairing != nil,
+           pairingInProgress,
+           pairingRegistration.readiness != .authorizing {
+            registrationReadiness = .failed
+            failPairing(
+                "Could not register for push notifications: \(error.localizedDescription)",
+                registrationFailed: true
+            )
         } else {
             recordError(error)
         }
     }
 
     private func submitPendingPairingIfReady() {
-        guard let pairing = pendingPairing, !pushToken.isEmpty,
-              !pairingSubmissionInFlight else { return }
-        pairingInProgress = true
-        pairingSubmissionInFlight = true
-        pairingError = nil
         let token = pushToken
+        guard let pairing = pendingPairing,
+              let attemptID = pairingRegistration.activeAttemptID,
+              pairingRegistration.claimSubmission(for: attemptID, token: token) else { return }
+        pairingInProgress = true
+        pairingError = nil
         let deviceName = UIDevice.current.name
+        let key = createPushKey(name: pairing.sender)
+        pairingKeyID = key.id
+        let sharedToken = key.token(for: token)
         Task {
             do {
                 let endpoint = pairing.server
@@ -335,7 +478,7 @@ final class AppModel: ObservableObject {
                         "name": deviceName,
                         "platform": "ios",
                         "bundle_id": "io.sidepulse.ios",
-                        "push_token": token,
+                        "push_token": sharedToken,
                     ],
                 ]
                 var request = URLRequest(url: endpoint)
@@ -343,6 +486,11 @@ final class AppModel: ObservableObject {
                 request.setValue("application/json", forHTTPHeaderField: "Content-Type")
                 request.httpBody = try JSONSerialization.data(withJSONObject: body)
                 let (_, response) = try await URLSession.shared.data(for: request)
+                guard self.pairingRegistration.activeAttemptID == attemptID, self.pairingInProgress else { return }
+                guard self.pushToken == token else {
+                    failPairing("The push token changed while linking. Start pairing again so the desktop receives the current token.")
+                    return
+                }
                 guard let httpResponse = response as? HTTPURLResponse,
                       (200..<300).contains(httpResponse.statusCode) else {
                     throw URLError(.badServerResponse)
@@ -351,17 +499,37 @@ final class AppModel: ObservableObject {
                     in: CharacterSet(charactersIn: "/")
                 )
                 isBridgeLinked = true
+                linkedPushToken = token
+                UserDefaults.standard.set(token, forKey: Defaults.linkedPushToken)
+                requiresRelinking = false
+                pairingKeyID = nil
+                pairingRegistration.finish(attemptID)
                 pushTokenTimeoutTask?.cancel()
                 pushTokenTimeoutTask = nil
                 pairingInProgress = false
-                pairingSubmissionInFlight = false
                 lastMessage = "Linked to \(pairing.sender)"
                 EventLog.append("Linked to \(pairing.sender) through \(pairing.server.host ?? "bridge")")
                 refreshEventLog()
                 pairingSuccessMessage = "SidePulse writes from \(pairing.sender) will now arrive on this iPhone."
             } catch {
+                guard self.pairingRegistration.activeAttemptID == attemptID else { return }
                 failPairing("Could not complete pairing: \(error.localizedDescription)")
             }
+        }
+    }
+
+    private func discardPendingPairingKey() {
+        if let id = pairingKeyID { pushKeys.remove(id: id) }
+        pairingKeyID = nil
+    }
+
+    private func supersedePairingAttempt() {
+        discardPendingPairingKey()
+        pushTokenTimeoutTask?.cancel()
+        pushTokenTimeoutTask = nil
+        if let attemptID = pairingRegistration.activeAttemptID {
+            pairingRegistration.cancel(attemptID)
+            registrationReadiness = pairingRegistration.readiness
         }
     }
 
@@ -402,24 +570,49 @@ final class AppModel: ObservableObject {
 
     @discardableResult
     func processPush(_ userInfo: [AnyHashable: Any], source: String) -> Bool {
-        if !hasReceivedRemotePush {
-            hasReceivedRemotePush = true
-            EventLog.append("Remote push delivery confirmed")
-        }
         let resolution = PushPayloadResolver.resolve(userInfo: userInfo)
         return processResolvedPush(resolution, source: source)
     }
 
     var shouldShowLinkInstructions: Bool {
-        !isBridgeLinked && !hasReceivedRemotePush
+        !isBridgeLinked && (!hasReceivedRemotePush || requiresRelinking)
     }
 
     @discardableResult
-    func processResolvedPush(_ resolution: PushPayloadResolution, source: String) -> Bool {
-        if resolution.eventID != nil, !isBridgeLinked {
+    func processResolvedPush(_ resolution: PushPayloadResolution, source: String, isRemote: Bool = true) -> Bool {
+        let senderID = pushKeys.records.first { $0.value == resolution.sharedKey }?.id
+        if isRemote {
+            switch pushKeys.receive(key: resolution.sharedKey, messageID: resolution.receiptID) {
+            case .rejected:
+                EventLog.append("Ignored remote push: missing, unknown, or removed key")
+                refreshEventLog()
+                return false
+            case .duplicate:
+                let previous = receivedPushes.first { $0.matchesReceipt(resolution, senderID: senderID) }
+                if previous?.writeStatus != .failed && previous?.writeStatus != .noFolder {
+                    EventLog.append("Ignored duplicate SidePulse push")
+                    refreshEventLog()
+                    return true
+                }
+                // A delivery receipt is not proof that USB writing succeeded.
+                // Recovery may retry after the user reconnects or selects the Dot.
+            case .accepted:
+                if !hasReceivedRemotePush {
+                    hasReceivedRemotePush = true
+                    EventLog.append("Remote push delivery confirmed")
+                }
+            }
+        }
+        if resolution.eventID != nil,
+           !isBridgeLinked,
+           PushLinkPolicy.canInferLinkFromPush(
+               requiresRelinking: requiresRelinking,
+               linkedToken: linkedPushToken,
+               currentToken: pushToken
+           ) {
             isBridgeLinked = true
         }
-        if let eventID = resolution.eventID, processedEventIDs()[eventID] != nil {
+        if let eventID = resolution.eventID, processedEventIDs()[eventIdentity(eventID, sharedKey: resolution.sharedKey)] != nil {
             EventLog.append("Ignored duplicate SidePulse event")
             refreshEventLog()
             return true
@@ -456,16 +649,60 @@ final class AppModel: ObservableObject {
                 payloadSummary: resolution.payloadSummary,
                 writeStatus: status,
                 errorMessage: errorMessage,
-                eventID: resolution.eventID
+                eventID: resolution.eventID,
+                sharedKeySuffix: resolution.sharedKey.map { String($0.suffix(4)) },
+                pushID: resolution.pushID,
+                senderKeyID: senderID
             )
         )
-        if let eventID = resolution.eventID {
-            markEventProcessed(eventID)
+        if let eventID = resolution.eventID, status != .failed, status != .noFolder {
+            markEventProcessed(eventIdentity(eventID, sharedKey: resolution.sharedKey))
         }
         return status != .failed
     }
 
+    func processPushAndCleanUp(_ userInfo: [AnyHashable: Any], source: String) async -> Bool {
+        let previousID = receivedPushes.first?.id
+        let didHandle = processPush(userInfo, source: source)
+        let resolution = PushPayloadResolver.resolve(userInfo: userInfo)
+        let senderID = pushKeys.records.first { $0.value == resolution.sharedKey }?.id
+        // Use this receipt's latest attempt; another sender or an older write of
+        // identical LED text must never hide a notification for a failed update.
+        let matchingReceipt = receivedPushes.first { $0.matchesReceipt(resolution, senderID: senderID) }
+        let newReceipt = receivedPushes.first.flatMap { $0.id != previousID ? $0 : nil }
+        let wasWritten = (newReceipt ?? matchingReceipt)?.writeStatus == .wrote
+        let unauthorized = resolution.shouldClearNotification(isAuthorized: pushKeys.accepts(resolution.sharedKey))
+        if unauthorized || (didHandle && wasWritten && resolution.isLEDUpdate) {
+            let notifications = await UNUserNotificationCenter.current().deliveredNotifications()
+            let identifiers = notifications.compactMap { notification -> String? in
+                let delivered = PushPayloadResolver.resolve(userInfo: notification.request.content.userInfo)
+                return resolution.matchesNotification(delivered) ? notification.request.identifier : nil
+            }
+            UNUserNotificationCenter.current().removeDeliveredNotifications(withIdentifiers: identifiers)
+        }
+        return didHandle
+    }
+
+    private func clearUnauthorizedNotifications() async {
+        let center = UNUserNotificationCenter.current()
+        let notifications = await center.deliveredNotifications()
+        let identifiers = notifications.compactMap { notification -> String? in
+            let resolution = PushPayloadResolver.resolve(userInfo: notification.request.content.userInfo)
+            return resolution.shouldClearNotification(isAuthorized: pushKeys.accepts(resolution.sharedKey))
+                ? notification.request.identifier : nil
+        }
+        guard !identifiers.isEmpty else { return }
+        center.removeDeliveredNotifications(withIdentifiers: identifiers)
+        EventLog.append("Dismissed \(identifiers.count) unauthorized notification(s)")
+        refreshEventLog()
+    }
+
     func recoverQueuedPushes() {
+        Task { await clearUnauthorizedNotifications() }
+        guard !pushKeys.records.isEmpty else {
+            lastRecoveryStatus = "No active senders"
+            return
+        }
         guard !pushToken.isEmpty, !recoveryInProgress else { return }
         let now = Date()
         if let lastRecoveryAttempt, now.timeIntervalSince(lastRecoveryAttempt) < 3 {
@@ -475,45 +712,118 @@ final class AppModel: ObservableObject {
             lastRecoveryStatus = "Invalid bridge URL"
             return
         }
-        let endpoint = server
-            .appendingPathComponent("api")
-            .appendingPathComponent("leds")
-            .appendingPathComponent("apns_\(pushToken)")
-            .appendingPathComponent("queued")
+        let endpoint = PushRecoveryEndpoint.queued(server: server, token: pushToken)
         recoveryInProgress = true
         lastRecoveryAttempt = now
         Task {
-            defer { recoveryInProgress = false }
+            defer { finishRecovery() }
             do {
-                var request = URLRequest(url: endpoint)
-                request.cachePolicy = .reloadIgnoringLocalCacheData
-                let (data, response) = try await URLSession.shared.data(for: request)
-                guard let httpResponse = response as? HTTPURLResponse,
-                      (200..<300).contains(httpResponse.statusCode),
-                      let entries = try JSONSerialization.jsonObject(with: data) as? [Any] else {
-                    throw URLError(.badServerResponse)
-                }
-                var handled = 0
-                for entry in entries {
-                    let payload: [AnyHashable: Any]
-                    if let object = entry as? [String: Any] {
-                        payload = Dictionary(uniqueKeysWithValues: object.map { (AnyHashable($0.key), $0.value) })
-                    } else if let text = entry as? String {
-                        payload = [AnyHashable("leds"): text]
-                    } else {
-                        continue
-                    }
-                    if processPush(payload, source: "Recovered push") {
-                        handled += 1
-                    }
-                }
-                lastRecoveryStatus = entries.isEmpty ? "Up to date" : "Recovered \(handled)"
+                let result = try await fetchQueuedLEDUpdates(from: endpoint, source: "Recovered push")
+                lastRecoveryStatus = result.queuedCount == 0
+                    ? "Up to date"
+                    : "Recovered \(result.handledCount)"
             } catch {
                 lastRecoveryStatus = "Recovery failed"
                 EventLog.append("Push recovery failed: \(error.localizedDescription)")
                 refreshEventLog()
             }
         }
+    }
+
+    func updateLEDsFromServer() async throws -> ServerLEDUpdateResult {
+        await clearUnauthorizedNotifications()
+        guard !pushKeys.records.isEmpty else {
+            lastRecoveryStatus = "No active senders"
+            EventLog.append("Server update skipped: no active sender keys")
+            refreshEventLog()
+            return ServerLEDUpdateResult(queuedCount: 0, handledCount: 0)
+        }
+        guard !pushToken.isEmpty else {
+            throw ServerLEDUpdateError.missingPushToken
+        }
+        guard DriveWriter.shared.hasSavedFolder else {
+            throw ServerLEDUpdateError.noFolderSelected
+        }
+        // Run another check after the active request, since a new push may have
+        // arrived after that request's server snapshot.
+        while recoveryInProgress {
+            await withCheckedContinuation { continuation in
+                recoveryWaiters.append(continuation)
+            }
+        }
+        guard let server = URL(string: bridgeBaseURL) else {
+            throw ServerLEDUpdateError.invalidBridgeURL
+        }
+
+        let endpoint = PushRecoveryEndpoint.queued(server: server, token: pushToken)
+
+        recoveryInProgress = true
+        lastRecoveryAttempt = Date()
+        defer { finishRecovery() }
+
+        do {
+            let result = try await fetchQueuedLEDUpdates(
+                from: endpoint,
+                source: "Shortcut server update"
+            )
+            lastRecoveryStatus = result.queuedCount == 0
+                ? "Up to date"
+                : "Updated \(result.handledCount)"
+            EventLog.append(
+                result.queuedCount == 0
+                    ? "Shortcut server update: already up to date"
+                    : "Shortcut server update: handled \(result.handledCount) queued update(s)"
+            )
+            refreshEventLog()
+            return result
+        } catch {
+            lastRecoveryStatus = "Update failed"
+            EventLog.append("Shortcut server update failed: \(error.localizedDescription)")
+            refreshEventLog()
+            throw error
+        }
+    }
+
+    private func finishRecovery() {
+        recoveryInProgress = false
+        let waiters = recoveryWaiters
+        recoveryWaiters.removeAll()
+        for waiter in waiters {
+            waiter.resume()
+        }
+    }
+
+    private func fetchQueuedLEDUpdates(
+        from endpoint: URL,
+        source: String
+    ) async throws -> ServerLEDUpdateResult {
+        var request = URLRequest(url: endpoint)
+        request.cachePolicy = .reloadIgnoringLocalCacheData
+        let (data, response) = try await URLSession.shared.data(for: request)
+        guard let httpResponse = response as? HTTPURLResponse,
+              (200..<300).contains(httpResponse.statusCode),
+              let entries = try JSONSerialization.jsonObject(with: data) as? [Any] else {
+            throw ServerLEDUpdateError.invalidResponse
+        }
+
+        var handled = 0
+        for entry in entries {
+            let payload: [AnyHashable: Any]
+            if let object = entry as? [String: Any] {
+                payload = Dictionary(
+                    uniqueKeysWithValues: object.map { (AnyHashable($0.key), $0.value) }
+                )
+            } else if let text = entry as? String {
+                payload = [AnyHashable("leds"): text]
+            } else {
+                continue
+            }
+            let containsLEDUpdate = PushPayloadResolver.resolve(userInfo: payload).resolvedLEDText != nil
+            if await processPushAndCleanUp(payload, source: source), containsLEDUpdate {
+                handled += 1
+            }
+        }
+        return ServerLEDUpdateResult(queuedCount: entries.count, handledCount: handled)
     }
 
     func clearReceivedPushes() {
@@ -569,7 +879,7 @@ final class AppModel: ObservableObject {
             return nil
         }
 
-        let tokenLine = pushToken.isEmpty ? "" : "\n  -d '{\"device_token\":\"\(pushToken)\",\"pattern\":\"green_pulse_2\"}'"
+        let tokenLine = pushToken.isEmpty ? "" : "\n  -d '{\"device_token\":\"<copied-token>\",\"pattern\":\"green_pulse_2\"}'"
         let authHeader = sharedSecret.isEmpty ? "" : " \\\n  -H \"Authorization: Bearer \(sharedSecret)\""
         if tokenLine.isEmpty {
             return """
@@ -613,6 +923,11 @@ final class AppModel: ObservableObject {
         if let data = try? JSONEncoder().encode(receivedPushes) {
             UserDefaults.standard.set(data, forKey: Defaults.receivedPushes)
         }
+    }
+
+    private func eventIdentity(_ eventID: String, sharedKey: String?) -> String {
+        let identity = pushKeys.records.first { $0.value == sharedKey }?.id.uuidString ?? "local"
+        return identity + ":" + eventID
     }
 
     private func processedEventIDs() -> [String: TimeInterval] {

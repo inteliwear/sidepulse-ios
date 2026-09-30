@@ -19,7 +19,7 @@ final class AppDelegate: NSObject, UIApplicationDelegate, UNUserNotificationCent
 
         if let userInfo = launchOptions?[.remoteNotification] as? [AnyHashable: Any] {
             Task { @MainActor in
-                AppModel.shared.processPush(userInfo, source: "Launch notification")
+                _ = await AppModel.shared.processPushAndCleanUp(userInfo, source: "Launch notification")
             }
         }
 
@@ -51,7 +51,7 @@ final class AppDelegate: NSObject, UIApplicationDelegate, UNUserNotificationCent
         fetchCompletionHandler completionHandler: @escaping (UIBackgroundFetchResult) -> Void
     ) {
         Task { @MainActor in
-            let didHandle = AppModel.shared.processPush(userInfo, source: "Background push")
+            let didHandle = await AppModel.shared.processPushAndCleanUp(userInfo, source: "Background push")
             completionHandler(didHandle ? .newData : .failed)
         }
     }
@@ -72,7 +72,7 @@ final class AppDelegate: NSObject, UIApplicationDelegate, UNUserNotificationCent
             return false
         }
         Task { @MainActor in
-            AppModel.shared.processResolvedPush(resolution, source: "Shortcut URL")
+            AppModel.shared.processResolvedPush(resolution, source: "Shortcut URL", isRemote: false)
         }
         return true
     }
@@ -81,18 +81,21 @@ final class AppDelegate: NSObject, UIApplicationDelegate, UNUserNotificationCent
         _ center: UNUserNotificationCenter,
         willPresent notification: UNNotification
     ) async -> UNNotificationPresentationOptions {
-        [.banner, .sound]
+        let userInfo = notification.request.content.userInfo
+        let shouldPresent = await MainActor.run {
+            AppModel.shared.acceptsPush(userInfo)
+        }
+        _ = await AppModel.shared.processPushAndCleanUp(userInfo, source: "Foreground push")
+        return shouldPresent ? [.banner, .sound] : []
     }
 
     func userNotificationCenter(
         _ center: UNUserNotificationCenter,
         didReceive response: UNNotificationResponse
     ) async {
-        let _ = await MainActor.run {
-            AppModel.shared.processPush(
-                response.notification.request.content.userInfo,
-                source: "Opened notification"
-            )
-        }
+        let _ = await AppModel.shared.processPushAndCleanUp(
+            response.notification.request.content.userInfo,
+            source: "Opened notification"
+        )
     }
 }

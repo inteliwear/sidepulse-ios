@@ -106,6 +106,17 @@ struct ReceivedPush: Identifiable, Codable, Hashable {
     var writeStatus: WriteStatus
     var errorMessage: String?
     var eventID: String? = nil
+    var sharedKeySuffix: String? = nil
+    var pushID: String? = nil
+    /// Local record identity, never the sender's secret key.
+    var senderKeyID: UUID? = nil
+
+    func matchesReceipt(_ resolution: PushPayloadResolution, senderID: UUID?) -> Bool {
+        guard let senderID, senderKeyID == senderID else { return false }
+        if let eventID = resolution.eventID { return self.eventID == eventID }
+        if let pushID = resolution.pushID { return self.eventID == nil && self.pushID == pushID }
+        return false
+    }
 
     var ledByteCount: Int {
         ledText?.data(using: .utf8)?.count ?? 0
@@ -133,6 +144,26 @@ struct PushPayloadResolution {
     let ledText: String?
     let payloadSummary: String
     let eventID: String?
+    let sharedKey: String?
+    let pushID: String?
+
+    var receiptID: String? { eventID ?? pushID }
+
+    var isLEDUpdate: Bool { ledText != nil || patternName != nil }
+
+    func shouldClearNotification(isAuthorized: Bool) -> Bool {
+        !isAuthorized
+    }
+
+    func matchesNotification(_ other: PushPayloadResolution) -> Bool {
+        guard sharedKey == other.sharedKey else { return false }
+        if eventID != nil || other.eventID != nil { return eventID == other.eventID }
+        if pushID != nil || other.pushID != nil { return pushID == other.pushID }
+        return patternName == other.patternName
+            && resolvedLEDText == other.resolvedLEDText
+            && sourceTitle == other.sourceTitle
+            && sourceBody == other.sourceBody
+    }
 
     var resolvedLEDText: String? {
         ledText ?? pattern?.ledText
@@ -177,7 +208,7 @@ struct PushPayloadResolution {
 }
 
 enum PushPayloadResolver {
-    private static let ledKeys = ["leds", "LEDS.LED", "LEDS.led", "text"]
+    private static let ledKeys = ["leds", "LEDS.LED", "LEDS.led", "LEDS.txt", "LEDS.TXT", "text"]
 
     static func resolve(userInfo: [AnyHashable: Any]) -> PushPayloadResolution {
         let payload = normalizedDictionary(userInfo)
@@ -201,7 +232,9 @@ enum PushPayloadResolver {
             pattern: pattern,
             ledText: ledText,
             payloadSummary: summary(from: payload),
-            eventID: eventID?.isEmpty == false ? eventID : nil
+            eventID: eventID?.isEmpty == false ? eventID : nil,
+            sharedKey: payload["shared_key"] as? String,
+            pushID: (payload["sidepulse_push_id"] as? String)?.trimmedNonEmpty
         )
     }
 
@@ -288,7 +321,7 @@ enum PushPayloadResolver {
     }
 
     private static func summary(from payload: [String: Any]) -> String {
-        let visiblePayload = payload.filter { key, _ in
+        let visiblePayload = redacted(payload).filter { key, _ in
             key != "aps"
         }
 
@@ -303,6 +336,24 @@ enum PushPayloadResolver {
         }
 
         return truncated(visiblePayload.keys.sorted().joined(separator: ", "))
+    }
+
+    private static func redacted(_ payload: [String: Any]) -> [String: Any] {
+        var output: [String: Any] = [:]
+        for (key, value) in payload {
+            if key == "shared_key" {
+                output[key] = (value as? String).map { "…" + String($0.suffix(4)) } ?? "[hidden]"
+            } else {
+                output[key] = redactedValue(value)
+            }
+        }
+        return output
+    }
+
+    private static func redactedValue(_ value: Any) -> Any {
+        if let nested = value as? [String: Any] { return redacted(nested) }
+        if let array = value as? [Any] { return array.map(redactedValue) }
+        return value
     }
 
     private static func truncated(_ value: String) -> String {
