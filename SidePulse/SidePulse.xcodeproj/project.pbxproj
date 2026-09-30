@@ -26,6 +26,9 @@
 		9F0000010000000000000024 /* PushKeyRegistry.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9F0000010000000000000124 /* PushKeyRegistry.swift */; };
 		9F0000010000000000000030 /* PatternThumbnailRenderer.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9F0000010000000000000130; };
 		9F0000010000000000000031 /* PatternThumbnailSampler.mm in Sources */ = {isa = PBXBuildFile; fileRef = 9F0000010000000000000131; };
+		9F0000010000000000000040 /* Firmware.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9F0000010000000000000140 /* Firmware.swift */; };
+		9F0000010000000000000041 /* FirmwareUpdateModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9F0000010000000000000141 /* FirmwareUpdateModel.swift */; };
+		9F0000010000000000000042 /* FirmwareSettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9F0000010000000000000142 /* FirmwareSettingsView.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -51,6 +54,9 @@
 		9F0000010000000000000124 /* PushKeyRegistry.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PushKeyRegistry.swift; sourceTree = "<group>"; };
 		9F0000010000000000000130 /* PatternThumbnailRenderer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PatternThumbnailRenderer.swift; sourceTree = "<group>"; };
 		9F0000010000000000000131 /* PatternThumbnailSampler.mm */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.objcpp; path = PatternThumbnailSampler.mm; sourceTree = "<group>"; };
+		9F0000010000000000000140 /* Firmware.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Firmware.swift; sourceTree = "<group>"; };
+		9F0000010000000000000141 /* FirmwareUpdateModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FirmwareUpdateModel.swift; sourceTree = "<group>"; };
+		9F0000010000000000000142 /* FirmwareSettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FirmwareSettingsView.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -84,6 +90,9 @@
 				9F0000010000000000000101 /* SidePulseApp.swift */,
 				9F0000010000000000000102 /* ContentView.swift */,
 				9F0000010000000000000103 /* AppModel.swift */,
+				9F0000010000000000000140 /* Firmware.swift */,
+				9F0000010000000000000141 /* FirmwareUpdateModel.swift */,
+				9F0000010000000000000142 /* FirmwareSettingsView.swift */,
 				9F0000010000000000000104 /* DriveWriter.swift */,
 				9F0000010000000000000105 /* AppDelegate.swift */,
 				9F0000010000000000000112 /* EventLog.swift */,
@@ -186,6 +195,9 @@
 				9F0000010000000000000001 /* SidePulseApp.swift in Sources */,
 				9F0000010000000000000002 /* ContentView.swift in Sources */,
 				9F0000010000000000000003 /* AppModel.swift in Sources */,
+				9F0000010000000000000040 /* Firmware.swift in Sources */,
+				9F0000010000000000000041 /* FirmwareUpdateModel.swift in Sources */,
+				9F0000010000000000000042 /* FirmwareSettingsView.swift in Sources */,
 				9F0000010000000000000004 /* DriveWriter.swift in Sources */,
 				9F0000010000000000000005 /* AppDelegate.swift in Sources */,
 				9F0000010000000000000009 /* EventLog.swift in Sources */,

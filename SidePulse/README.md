@@ -68,11 +68,55 @@ the separate [trademark policy](../TRADEMARKS.md).
 6. Build and run on a real iPhone or iPad. APNs push tokens do not work on the
    simulator.
 7. Run `sidepulse link` on your computer and scan its QR code, or tap **Get Push Token** and copy the token into that command.
-8. Tap **Set Up SidePulse Dot Folder**, then select the SidePulse Dot USB drive folder
-   containing `LEDS.LED` in Files.
+8. On the main screen, tap **Select PulseDot in Files**. Open **Browse → Locations →
+   PulseDot**, then tap **Open** to allow access to the USB drive folder containing
+   `LEDS.LED`. After selection, the setup card is replaced by connection status;
+   folder selection remains available in Settings. Connection status reflects
+   whether the saved folder is currently accessible, and refreshes while the app
+   is active. Settings shows the status without exposing the folder path.
 
 If no SidePulse Dot folder is configured, pushes still appear in the inbox. The app
 does not treat that as a user-facing failure.
+
+## Firmware checks and updates
+
+Settings → **Firmware** includes **Check Firmware**, an optional
+**Automatically Check Firmware** toggle (off by default), and **Update to…**
+when a newer release is available. Select the device’s top-level folder in
+Files first. `STATUS.TXT` identifies SidePulse Dot (`app_version`) or SidePulse
+Pro (`release_version`); packages are matched to that model.
+
+With automatic checks enabled, opening SidePulse or returning it to the
+foreground reads `STATUS.TXT` and checks the
+[firmware repository](https://github.com/inteliwear/sidepulse/tree/main/firmware)
+for releases at most once every 24 hours. The limit persists across launches,
+including failed attempts. Manual checks remain available anytime and also
+reset the daily limit. Firmware is not polled while the app stays open.
+Automatic network checks cancel when the app leaves the foreground; this does
+not request background execution or install firmware automatically.
+
+Tapping **Update to…** starts the update directly. The app
+verifies the published ZIP SHA-256, the checksums of all files inside it, and its
+model/version metadata. It rechecks the selected folder and device identity
+immediately before writing only `FIRMWARE.BIN`, in place, and flushing the file.
+Same-version installs and known downgrades are refused. LED writes pause during
+the transfer and for ten seconds afterward.
+
+A completed transfer tells the user to keep the device connected for at least
+ten seconds while it finishes updating. The app does not ask the user to
+reconnect or complete a separate confirmation step. Only a matching version in
+`STATUS.TXT` marks installation as confirmed internally; pending transfers
+persist across app launches. Opening the app also checks
+pending installations locally, even with automatic release checks disabled;
+this confirmation does not fetch releases or wait for the daily limit. A writable
+device drive is required; Files permissions or device policies may prevent a
+copy-based update.
+
+Firmware validation: `swift test --package-path SidePulse --filter Firmware`
+covers status/model detection, numeric releases, model-specific release
+selection, package integrity, malformed archives, opt-in behavior, caching, and
+installation confirmation. Test ZIPs contain synthetic payloads and must never
+be installed on hardware.
 
 ## Active push keys
 
@@ -293,13 +337,17 @@ The home screen has a compact row with the rendered Dot, an animated rainbow
 larger native Shortcuts badge opens SidePulse’s actions.
 
 Pattern Library includes starter Blink/Breathe patterns and an orange/blue
-sequence. Tap a pattern to preview or play it, or choose **New**.
+sequence. Tap a pattern to open its preview and automatically play it on the
+connected SidePulse Dot, or choose **New**. Opening a pattern without a connected
+Dot previews it on screen. Returning from an editor does not replay it;
+tap the library pattern again to play it again.
 The editor supports independent colors for both LEDs, Hold/Fade/Pulse effects,
 50 ms–10 s steps, reordering, and up to 20 plays or continuous looping. Patterns
 are limited to 12 steps and validated against the Dot’s 512-byte program limit.
 The on-screen preview runs the device language; screen colors are not a
 calibrated representation of LED output. Creating and previewing patterns works
-without a connected Dot. Playing asks for the USB folder when it is not configured.
+without a connected Dot. Select the PulseDot folder on the main screen to enable
+automatic playback on the device.
 
 **Browse library** opens the searchable library. Use Edit, Duplicate, or swipe to delete.
 Saved patterns live in the app’s Application Support directory and survive app

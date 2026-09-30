@@ -159,8 +159,8 @@ final class AppModel: ObservableObject {
     }
     @Published private(set) var registrationReadiness: APNsRegistrationReadiness = .cached
 
-    @Published var selectedFolderPath: String = "No USB folder selected"
     @Published var hasFolderAccess: Bool = false
+    @Published var isDotConnected: Bool = false
 
     @Published var ledText: String {
         didSet { UserDefaults.standard.set(ledText, forKey: Defaults.ledText) }
@@ -563,7 +563,7 @@ final class AppModel: ObservableObject {
 
     func refreshFolderStatus() {
         hasFolderAccess = DriveWriter.shared.hasSavedFolder
-        selectedFolderPath = DriveWriter.shared.savedFolderDisplayName
+        isDotConnected = DriveWriter.shared.isFolderAvailable
     }
 
     func recordWriteSuccess(_ message: String) {

@@ -15,9 +15,9 @@ struct ContentView: View {
     @StateObject private var model: AppModel
     @State private var isShowingFolderPicker = false
     @State private var isShowingSettings = false
-    @State private var opensSettingsAfterFolderSelection = false
     @State private var activeSheet: ActiveSheet?
     @StateObject private var library = PatternLibraryStore.shared
+    @StateObject private var firmware = FirmwareUpdateModel.shared
     @State private var playbackNotice: String?
 
     init() {
@@ -33,6 +33,28 @@ struct ContentView: View {
             ScrollView {
                 VStack(alignment: .leading, spacing: 16) {
                     SidePulseBrandHeader { isShowingSettings = true }
+
+                    if firmware.updateAvailable && model.isDotConnected {
+                        Button { isShowingSettings = true } label: {
+                            Label("Firmware Update Available", systemImage: "arrow.down.circle")
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                                .frame(minHeight: 44)
+                        }
+                        .buttonStyle(.bordered)
+                    }
+
+                    if model.hasFolderAccess {
+                        Button { isShowingSettings = true } label: {
+                            DotConnectionStatus(isConnected: model.isDotConnected)
+                                .font(.subheadline)
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                                .frame(minHeight: 44)
+                        }
+                        .buttonStyle(.plain)
+                        .accessibilityHint("Opens SidePulse Dot settings")
+                    } else {
+                        FolderSetupPanel { showFolderPicker() }
+                    }
 
                     VStack(spacing: 2) {
                         SidePulseShortcutsBadge()
@@ -102,6 +124,7 @@ struct ContentView: View {
             .navigationDestination(isPresented: $isShowingSettings) {
                 SettingsView(
                     model: model,
+                    firmware: firmware,
                     requestPushToken: requestPushToken,
                     showFolderPicker: { showFolderPicker() }
                 )
@@ -112,7 +135,7 @@ struct ContentView: View {
             switch sheet {
             case .folderSetup:
                 FolderSetupSheet() {
-                    showFolderPicker(navigateToSettingsAfterSelection: !model.hasFolderAccess)
+                    showFolderPicker()
                 }
             case .agentControl:
                 AgentControlSheet(model: model)
@@ -124,25 +147,14 @@ struct ContentView: View {
                 do {
                     try DriveWriter.shared.saveFolder(url)
                     model.refreshFolderStatus()
-                    model.lastMessage = "Selected \(url.lastPathComponent)"
-
-                    if opensSettingsAfterFolderSelection {
-                        opensSettingsAfterFolderSelection = false
-                        DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
-                            isShowingSettings = true
-                        }
-                    }
+                    firmware.folderChanged(isConnected: model.isDotConnected)
+                    model.lastMessage = "PulseDot folder selected"
                 } catch {
-                    opensSettingsAfterFolderSelection = false
                     model.recordError(error)
                     activeSheet = .folderSetup
                 }
             } onCancel: {
                 isShowingFolderPicker = false
-                opensSettingsAfterFolderSelection = false
-                if !model.hasFolderAccess {
-                    activeSheet = .folderSetup
-                }
             }
         }
         .sheet(item: $model.pendingPairing) { pairing in
@@ -209,8 +221,21 @@ struct ContentView: View {
         }
         .onChange(of: scenePhase) { phase in
             if phase == .active {
+                model.refreshFolderStatus()
                 model.recoverQueuedPushes()
                 library.reload()
+            } else {
+                firmware.cancelAutomaticCheck()
+            }
+        }
+        .task(id: scenePhase) {
+            guard scenePhase == .active else { return }
+            model.refreshFolderStatus()
+            firmware.checkOnAppOpen(isConnected: model.isDotConnected)
+            while !Task.isCancelled {
+                model.refreshFolderStatus()
+                firmware.connectionChanged(isConnected: model.isDotConnected)
+                do { try await Task.sleep(for: .seconds(5)) } catch { return }
             }
         }
     }
@@ -240,8 +265,7 @@ struct ContentView: View {
         }
     }
 
-    private func showFolderPicker(navigateToSettingsAfterSelection: Bool = false) {
-        opensSettingsAfterFolderSelection = navigateToSettingsAfterSelection
+    private func showFolderPicker() {
         activeSheet = nil
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) {
             isShowingFolderPicker = true
@@ -249,6 +273,8 @@ struct ContentView: View {
     }
 
     private func playLibraryPattern(_ pattern: LibraryPattern) {
+        model.refreshFolderStatus()
+        guard model.isDotConnected else { return }
         write(LEDPattern(name: pattern.id.uuidString, displayName: pattern.name,
                          detail: pattern.summary, ledText: pattern.ledText,
                          tintHex: pattern.steps.first?.left.hex ?? "#FFFFFF"))
@@ -543,11 +569,6 @@ private struct LinkSetupPanel: View {
 
                 instructionStep(2, "Scan the QR code with your iPhone Camera to link.")
 
-                Text("For direct HTTP push without CLI linking, use Direct Push Server in Settings.")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                    .lineSpacing(1)
-
                 Button {
                     UIPasteboard.general.string = "sidepulse link"
                     model.lastMessage = "Copied sidepulse link command"
@@ -743,6 +764,48 @@ private struct LatestReceivedLEDPanel: View {
     }
 }
 
+private struct DotConnectionStatus: View {
+    let isConnected: Bool
+
+    var body: some View {
+        Label(
+            isConnected ? "SidePulse Dot connected" : "SidePulse Dot disconnected",
+            systemImage: isConnected ? "checkmark.circle.fill" : "externaldrive.badge.xmark"
+        )
+        .foregroundStyle(isConnected ? Color.green : Color.secondary)
+    }
+}
+
+private struct FolderSetupPanel: View {
+    let openPicker: () -> Void
+
+    var body: some View {
+        Panel {
+            VStack(alignment: .leading, spacing: 12) {
+                Label("Set Up SidePulse Dot", systemImage: "externaldrive.fill")
+                    .font(.headline)
+                Text("Plug your SidePulse Dot into your iPhone, then select its folder in Files to enable LED playback.")
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+                Label("Browse → Locations → PulseDot", systemImage: "folder.fill")
+                    .font(.subheadline.weight(.medium))
+                Text("Open PulseDot, then tap Open to allow access.")
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
+                Button(action: openPicker) {
+                    Label("Select PulseDot in Files", systemImage: "folder.badge.plus")
+                        .frame(maxWidth: .infinity, minHeight: 32)
+                }
+                .buttonStyle(.borderedProminent)
+                Text("Don't have a SidePulse Dot yet? Get one here: [https://sidepulse.io/dot](https://sidepulse.io/dot)")
+                    .font(.body)
+                    .foregroundStyle(.secondary)
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+        }
+    }
+}
+
 private struct FolderSetupSheet: View {
     let openPicker: () -> Void
     @Environment(\.dismiss) private var dismiss
@@ -761,7 +824,7 @@ private struct FolderSetupSheet: View {
                     Text("Select Your SidePulse Dot")
                         .font(.title2.weight(.semibold))
 
-                    Text("SidePulse needs access to the PulseDot folder before it can write LED patterns.")
+                    Text("Plug your SidePulse Dot into your iPhone. In Files, open Browse → Locations → PulseDot, then tap Open to allow LED playback.")
                         .font(.body)
                         .foregroundStyle(.secondary)
                         .multilineTextAlignment(.center)
@@ -799,6 +862,7 @@ private struct FolderSetupSheet: View {
 
 private struct SettingsView: View {
     @ObservedObject var model: AppModel
+    @ObservedObject var firmware: FirmwareUpdateModel
     let requestPushToken: () -> Void
     let showFolderPicker: () -> Void
     @State private var keyToRemove: PushKeyRecord?
@@ -806,6 +870,27 @@ private struct SettingsView: View {
 
     var body: some View {
         Form {
+            Section("SidePulse Dot") {
+                if model.hasFolderAccess {
+                    DotConnectionStatus(isConnected: model.isDotConnected)
+                } else {
+                    Label("PulseDot folder not selected", systemImage: "folder.badge.questionmark")
+                        .foregroundStyle(.secondary)
+                }
+
+                Button(action: showFolderPicker) {
+                    Label(model.hasFolderAccess ? "Change PulseDot Folder" : "Select PulseDot in Files", systemImage: "folder.badge.plus")
+                }
+
+                if model.hasFolderAccess && !model.isDotConnected {
+                    Text("Plug your SidePulse Dot back into your iPhone to play patterns.")
+                        .font(.footnote)
+                        .foregroundStyle(.secondary)
+                }
+            }
+
+            FirmwareSettingsSection(firmware: firmware, isConnected: model.isDotConnected)
+
             Section("Link to Your Mac") {
                 Label(
                     model.isBridgeLinked ? "Linked" : "Not linked",
@@ -912,68 +997,12 @@ private struct SettingsView: View {
                 Text("Unused tokens expire after 24 hours. Tokens used at least once stay until you remove them. Each sender has its own key; removing it stops that sender’s updates.")
             }
 
-            Section("SidePulse Dot") {
-                LabeledContent("Folder", value: model.selectedFolderPath)
-
-                Button {
-                    showFolderPicker()
-                } label: {
-                    Label(model.hasFolderAccess ? "Change LED Folder" : "Set Up LED Folder", systemImage: "folder.badge.plus")
-                }
-            }
-
             Section("Shortcuts") {
                 ShortcutsLink()
 
                 Text("Create, edit, preview, and share patterns in Pattern Library. Choose two LED colors and timing for each step, then play once, repeat, or loop continuously. Saved patterns are also available in the Play Pattern shortcut action.")
                     .font(.footnote)
                     .foregroundStyle(.secondary)
-            }
-
-            Section("Direct Push Server") {
-                Text("Use the original raw server for push-only delivery without linking the SidePulse CLI.")
-                    .font(.footnote)
-                    .foregroundStyle(.secondary)
-
-                Text("1. Copy a new token above.\n2. Configure the raw server with that token, including its key suffix.\n3. Send JSON to the endpoint below.")
-                    .font(.footnote)
-                    .foregroundStyle(.secondary)
-
-                TextField("Push server base URL", text: $model.serverBaseURL)
-                    .textInputAutocapitalization(.never)
-                    .autocorrectionDisabled()
-                    .keyboardType(.URL)
-
-                SecureField("Shared secret", text: $model.sharedSecret)
-                    .textInputAutocapitalization(.never)
-                    .autocorrectionDisabled()
-
-                if let endpoint = model.pushEndpointURL {
-                    Text("Push endpoint")
-                        .font(.caption.weight(.semibold))
-                        .foregroundStyle(.secondary)
-
-                    Text(endpoint)
-                        .font(.system(.footnote, design: .monospaced))
-                        .textSelection(.enabled)
-                }
-
-                if let curlExample = model.curlExample {
-                    Text("Example request")
-                        .font(.caption.weight(.semibold))
-                        .foregroundStyle(.secondary)
-
-                    Text(curlExample)
-                        .font(.system(.caption, design: .monospaced))
-                        .textSelection(.enabled)
-
-                    Button {
-                        UIPasteboard.general.string = curlExample
-                        model.lastMessage = "Copied curl example"
-                    } label: {
-                        Label("Copy Curl", systemImage: "terminal")
-                    }
-                }
             }
 
             Section("Raw LED Editor") {

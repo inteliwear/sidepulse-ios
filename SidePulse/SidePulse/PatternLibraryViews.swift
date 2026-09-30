@@ -156,6 +156,7 @@ struct PatternLibraryPanel: View {
                         PatternDetailView(patternID: pattern.id, store: store, play: play)
                     } label: { PatternLibraryRow(pattern: pattern) }
                     .buttonStyle(.plain)
+                    .accessibilityHint("Plays this pattern on the connected SidePulse Dot and opens its preview")
                     Divider().padding(.leading, 80)
                 }
                 if store.patterns.isEmpty {
@@ -249,6 +250,7 @@ struct PatternLibraryView: View {
         NavigationLink {
             PatternDetailView(patternID: pattern.id, store: store, play: play)
         } label: { PatternLibraryRow(pattern: pattern, chevron: false) }
+        .accessibilityHint("Plays this pattern on the connected SidePulse Dot and opens its preview")
         .listRowInsets(EdgeInsets(top: 0, leading: 0, bottom: 0, trailing: 12))
         .swipeActions {
             Button("Delete", role: .destructive) { deleting = pattern }
@@ -318,6 +320,7 @@ struct PatternDetailView: View {
     let play: (LibraryPattern) -> Void
     @State private var editing: LibraryPattern?
     @State private var textEditing: LibraryPattern?
+    @State private var hasStartedPlayback = false
     private var pattern: LibraryPattern? { store.patterns.first { $0.id == patternID } }
 
     var body: some View {
@@ -330,11 +333,6 @@ struct PatternDetailView: View {
                         Text("Preview it here. Make it yours.").font(.subheadline).foregroundStyle(.secondary)
                     }
                     PatternPreview(pattern: pattern)
-                    Button { play(pattern) } label: {
-                        Label("Play on SidePulse Dot", systemImage: "play.fill")
-                            .font(.headline).foregroundStyle(PatternStyle.onAccent).frame(maxWidth: .infinity).padding(.vertical, 10)
-                    }
-                    .buttonStyle(.borderedProminent).buttonBorderShape(.roundedRectangle(radius: 16)).controlSize(.large)
                     HStack(spacing: 14) {
                         Button { textEditing = pattern } label: {
                             Label("Edit .led text", systemImage: "chevron.left.forwardslash.chevron.right")
@@ -385,6 +383,11 @@ struct PatternDetailView: View {
         }
         .sheet(item: $editing) { PatternEditorView(pattern: $0, store: store) }
         .sheet(item: $textEditing) { PatternTextEditorView(pattern: $0, store: store) }
+        .onAppear {
+            guard !hasStartedPlayback, let pattern else { return }
+            hasStartedPlayback = true
+            play(pattern)
+        }
     }
 }
 
