@@ -1,6 +1,7 @@
 .DS_Store
 DerivedData/
 SidePulse/build/
+SidePulse/.build/
 *.xcuserstate
 xcuserdata/
 __pycache__/
@@ -8,3 +9,6 @@ __pycache__/
 .venv/
 *.env
 sidepulse.env
+*.blend[0-9]*
+AppStoreScreenshots/source/*.log
+Design/ShortcutArtwork/**/*.log

@@ -1,0 +1,11 @@
+Model Information:
+* title:	Iphone 17 pro
+* source:	https://sketchfab.com/3d-models/iphone-17-pro-4aeeeb41f9d14f96bb3f2589edc3edac
+* author:	Ibrahim.Bhl (https://sketchfab.com/Ibrahim.Bhl)
+
+Model License:
+* license type:	CC-BY-4.0 (http://creativecommons.org/licenses/by/4.0/)
+* requirements:	Author must be credited. Commercial use is allowed.
+
+If you use this 3D model in your project be sure to copy paste this credit wherever you share it:
+This work is based on "Iphone 17 pro" (https://sketchfab.com/3d-models/iphone-17-pro-4aeeeb41f9d14f96bb3f2589edc3edac) by Ibrahim.Bhl (https://sketchfab.com/Ibrahim.Bhl) licensed under CC-BY-4.0 (http://creativecommons.org/licenses/by/4.0/)

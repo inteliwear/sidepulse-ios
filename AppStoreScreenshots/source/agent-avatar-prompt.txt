@@ -1,0 +1,5 @@
+Use case: stylized-concept
+Asset type: transparent mascot cutout for a minimal premium App Store screenshot.
+Primary request: one original silly friendly AI agent avatar, a charming asymmetric rounded pebble creature with two comically different-sized expressive eyes, tiny rounded feet and one little bent antenna. Its silhouette should be distinctive and simple. Soft periwinkle-blue body with a small warm orange antenna tip, frosted silicone/clay material, subtle polished 3D studio rendering. Slightly tilted inquisitive pose, eyes looking down-left toward a phone. Cute and witty, not infantile. Entire character visible, centered, filling about 85 percent of a square canvas, crisp readable silhouette at small size. Soft studio lighting from upper left, very soft self-shadowing. True transparent background, no floor plane, no text, no logos, no other objects. Original character, do not reproduce any existing brand mascot.
+
+Generated with the built-in image generation tool.
