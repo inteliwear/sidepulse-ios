@@ -912,16 +912,6 @@ private struct SettingsView: View {
                 Text("Unused tokens expire after 24 hours. Tokens used at least once stay until you remove them. Each sender has its own key; removing it stops that sender’s updates.")
             }
 
-            Section("Bridge") {
-                LabeledContent("Server", value: model.bridgeBaseURL)
-                LabeledContent("Recovery", value: model.lastRecoveryStatus)
-                Button {
-                    model.recoverQueuedPushes()
-                } label: {
-                    Label("Check for Missed Pushes", systemImage: "arrow.clockwise")
-                }
-            }
-
             Section("SidePulse Dot") {
                 LabeledContent("Folder", value: model.selectedFolderPath)
 
