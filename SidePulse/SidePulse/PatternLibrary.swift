@@ -72,6 +72,7 @@ struct LibraryPattern: Codable, Identifiable, Hashable {
 
     var duration: Double { 1.0 / 60 + Double(steps.reduce(0) { $0 + $1.durationMS }) / 1000 }
     var summary: String {
+        if let featured = Self.featured.first(where: { $0.pattern.id == id && $0.pattern.ledText == ledText }) { return featured.detail }
         if !canEditVisually { return "Imported .led file" }
         let timing = String(format: "%.1fs", duration)
         let loop = repetitions == 0 ? "Loops" : repetitions == 1 ? "Once" : "\(repetitions) plays"
@@ -136,7 +137,39 @@ struct LibraryPattern: Codable, Identifiable, Hashable {
         return (left, right)
     }
 
-    static var starters: [Self] {
+    /// Preserve old IDs for existing Shortcuts; only untouched presets are grouped away.
+    var isClassicStarter: Bool {
+        Self.classicStarters.contains { $0.id == id && $0.name == name && $0.ledText == ledText }
+    }
+
+    static var starters: [Self] { featured.map(\.pattern) }
+
+    // Agent programs adapted from inteliwear/sidepulse (MIT, Peter Kuhar).
+    // See Design/PatternLibrary/Curation.md for exact sources and attribution.
+    private static let featured: [(pattern: Self, detail: String)] = {
+        let definitions: [(String, String, String)] = [
+            ("Working", "Cyan pulses pass from LED to LED · Loops", "off 320ms cosine\n0:#00E5FF 760ms pulse 0ms; 1:#00E5FF 760ms pulse 260ms\nrepeat\n"),
+            ("Needs You", "A warm amber call for attention · Loops", "off\n#FF3A00 1.6s pulse\nrepeat\n"),
+            ("All Done", "Two green cheers, then lights out · Once", "off\n#00FF66 #00FF66 240ms pulse\n#000000 #000000 140ms none\n#00FF66 #00FF66 640ms pulse\n#000000 #000000 400ms none\n"),
+            ("Aurora", "Violet and mint drift through blue · Loops", "#6500FF #00FFC2 1600ms cosine\n#007AFF #B000FF 2400ms cosine\n#00FFC2 #6500FF 2400ms cosine\n#6500FF #00FFC2 2400ms cosine\nrepeat\n"),
+            ("Ember Tide", "Glowing embers roll across the Dot · Loops", "off 320ms cosine\n0:#F23819 760ms pulse 0ms; 1:#F23819 760ms pulse 260ms\nrepeat\n"),
+            ("Purple Tide", "Staggered magenta waves · Loops", "off 320ms cosine\n0:#FF00FF 760ms pulse 0ms; 1:#FF00FF 760ms pulse 260ms\nrepeat\n"),
+            ("Night Rider", "A quick red scanner with a trailing pulse · Loops", "off\n0:#FF1200 360ms pulse;1:#FF1200 360ms pulse 90ms\nrepeat\n"),
+            ("Heartbeat", "A rose double beat with a quiet pause · Loops", "off\n#FF1744 #FF1744 180ms pulse\n#000000 #000000 120ms none\n#FF1744 #FF1744 320ms pulse\n#000000 #000000 1100ms none\nrepeat\n"),
+            ("Sunset", "Tangerine melts into rose and violet · Loops", "#FF4600 #FF147A 1800ms cosine\n#FF147A #7000FF 3000ms cosine\n#FF4600 #FF147A 3000ms cosine\nrepeat\n"),
+            ("Ocean", "Blue and turquoise trade places slowly · Loops", "#0066FF #00DDBB 1800ms cosine\n#00DDBB #0066FF 2800ms cosine\n#0066FF #00DDBB 2800ms cosine\nrepeat\n"),
+            ("Candlelight", "An uneven, softly flickering amber glow · Loops", "#FF6208 #C42A00 700ms cosine\n#B52E00 #FF720C 180ms cosine\n#FF5000 #D43B00 480ms cosine\n#DB4200 #FF6508 260ms cosine\n#FF780F #B52E00 900ms cosine\nrepeat\n"),
+            ("Spectrum", "A saturated rainbow flows between both lights · Loops", "#FF2400 #FFAE00 1000ms cosine\n#FFAE00 #20FF70 1200ms cosine\n#20FF70 #00BFFF 1200ms cosine\n#00BFFF #6500FF 1200ms cosine\n#6500FF #FF1685 1200ms cosine\n#FF1685 #FF2400 1200ms cosine\n#FF2400 #FFAE00 1200ms cosine\nrepeat\n")
+        ]
+        return definitions.enumerated().map { index, definition in
+            // These bundled programs are validated by the firmware engine in tests.
+            var pattern = try! PatternShareFile.decode(Data(definition.2.utf8), name: definition.0, allowLegacy: false)
+            pattern.id = UUID(uuidString: String(format: "A0200000-0000-4000-8000-%012d", index + 1))!
+            return (pattern, definition.1)
+        }
+    }()
+
+    static var classicStarters: [Self] {
         var result: [Self] = []
         let colors = [("Red", "FF0000"), ("Green", "00FF00"), ("Blue", "0000FF"),
                       ("Purple", "FF00FF"), ("Aqua", "00E5FF"), ("Ember", "FF6A00")]
@@ -266,11 +299,26 @@ struct PatternLibraryRepository {
     }
     func load() throws -> [LibraryPattern] {
         guard FileManager.default.fileExists(atPath: url.path) else { return LibraryPattern.starters }
-        let patterns = try JSONDecoder().decode([LibraryPattern].self, from: Data(contentsOf: url))
+        let data = try Data(contentsOf: url)
+        let patterns: [LibraryPattern]
+        if let legacy = try? JSONDecoder().decode([LibraryPattern].self, from: data) {
+            // Empty means intentionally cleared. Otherwise add the new collection once;
+            // preserve every saved identity, edit, and old Shortcut target.
+            let existingIDs = Set(legacy.map(\.id))
+            patterns = legacy.isEmpty ? [] : LibraryPattern.starters.filter { !existingIDs.contains($0.id) } + legacy
+        } else {
+            let document = try JSONDecoder().decode(Document.self, from: data)
+            guard document.version == 1 else { throw PatternLibraryError.invalid("Update SidePulse to open this library.") }
+            patterns = document.patterns
+        }
         guard Set(patterns.map(\.id)).count == patterns.count else {
             throw PatternLibraryError.invalid("The library contains duplicate identifiers.")
         }
         return try patterns.map { try $0.validated() }
+    }
+    private struct Document: Codable {
+        var version = 1
+        let patterns: [LibraryPattern]
     }
     func save(_ patterns: [LibraryPattern]) throws {
         let validated = try patterns.map { try $0.validated() }
@@ -278,7 +326,7 @@ struct PatternLibraryRepository {
             throw PatternLibraryError.invalid("The library contains duplicate identifiers.")
         }
         try FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
-        try JSONEncoder().encode(validated).write(to: url, options: .atomic)
+        try JSONEncoder().encode(Document(patterns: validated)).write(to: url, options: .atomic)
     }
 }
 

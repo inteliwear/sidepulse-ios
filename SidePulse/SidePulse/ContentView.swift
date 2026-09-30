@@ -47,6 +47,23 @@ struct ContentView: View {
                     }
                     .padding(.bottom, 8)
 
+                    Button { activeSheet = .agentControl } label: {
+                        HStack(spacing: 14) {
+                            Image(systemName: "sparkles")
+                                .font(.title2).foregroundStyle(PatternStyle.accent)
+                                .frame(width: 42, height: 42)
+                                .background(PatternStyle.accent.opacity(0.12), in: RoundedRectangle(cornerRadius: 12))
+                            VStack(alignment: .leading, spacing: 4) {
+                                Text("Let your agent control it").font(.headline).foregroundStyle(.primary)
+                                Text("Create a link to give your agent.").font(.subheadline).foregroundStyle(.secondary)
+                            }
+                            Spacer(minLength: 0)
+                            Image(systemName: "chevron.right").font(.caption.weight(.semibold)).foregroundStyle(.tertiary)
+                        }
+                        .padding(18).frame(maxWidth: .infinity, alignment: .leading)
+                        .background(PatternStyle.card, in: RoundedRectangle(cornerRadius: 20))
+                    }.buttonStyle(.plain)
+
                     VStack(alignment: .trailing, spacing: 12) {
                         PatternLibraryPanel(store: library, play: playLibraryPattern)
 
@@ -97,6 +114,8 @@ struct ContentView: View {
                 FolderSetupSheet() {
                     showFolderPicker(navigateToSettingsAfterSelection: !model.hasFolderAccess)
                 }
+            case .agentControl:
+                AgentControlSheet(model: model)
             }
         }
         .sheet(isPresented: $isShowingFolderPicker) {
@@ -353,11 +372,136 @@ private struct PairingSheet: View {
 
 private enum ActiveSheet: Identifiable {
     case folderSetup
+    case agentControl
 
     var id: String {
         switch self {
         case .folderSetup:
             return "folderSetup"
+        case .agentControl:
+            return "agentControl"
+        }
+    }
+}
+
+
+/// Each opening issues one independently revocable key; copying never issues another.
+private struct AgentControlSheet: View {
+    @ObservedObject var model: AppModel
+    @Environment(\.dismiss) private var dismiss
+    @State private var key: PushKeyRecord?
+    @State private var waiting = false
+    @State private var error: String?
+    @State private var permissionDenied = false
+    @State private var copied = false
+    @State private var attempt = UUID()
+
+    private var link: URL? {
+        guard let key, model.activePushKeys.contains(where: { $0.id == key.id }) else { return nil }
+        return key.agentControlURL(for: model.pushToken)
+    }
+
+    var body: some View {
+        NavigationStack {
+            ScrollView {
+                VStack(alignment: .leading, spacing: 24) {
+                    Image("DotHero").resizable().scaledToFit().frame(width: 88, height: 88)
+                        .shadow(color: .black.opacity(0.15), radius: 8, y: 6).accessibilityHidden(true)
+                    VStack(alignment: .leading, spacing: 12) {
+                        Text("Let your agent control it").font(.largeTitle.bold()).tracking(-0.8)
+                        Text("Just give this to your agent and it’ll know what to do.")
+                            .font(.title3).foregroundStyle(.secondary)
+                    }
+                    if let link {
+                        let instructions = "I have a SidePulse device. Use the instructions at this link to let me know if something needs my attention:\n\n\(link.absoluteString)"
+                        VStack(alignment: .leading, spacing: 14) {
+                            Label("Message for your agent", systemImage: "text.bubble").font(.headline)
+                            Text(instructions)
+                                .font(.body)
+                                .fixedSize(horizontal: false, vertical: true)
+                                .textSelection(.enabled).privacySensitive()
+                                .accessibilityIdentifier("agentControlLink")
+                            Text("The link includes a token for this iPhone.")
+                                .font(.footnote).foregroundStyle(.secondary)
+                        }
+                        .padding(20).frame(maxWidth: .infinity, alignment: .leading)
+                        .background(PatternStyle.card, in: RoundedRectangle(cornerRadius: 20))
+                        Button {
+                            UIPasteboard.general.string = instructions
+                            copied = true
+                        } label: {
+                            Label(copied ? "Copied" : "Copy instructions for your agent", systemImage: copied ? "checkmark" : "doc.on.doc")
+                                .font(.headline).frame(maxWidth: .infinity).padding(.vertical, 10)
+                                .foregroundStyle(PatternStyle.onAccent)
+                        }.buttonStyle(.borderedProminent).controlSize(.large)
+                            .buttonBorderShape(.roundedRectangle(radius: 16))
+                            .accessibilityIdentifier("copyAgentControlLink")
+                        DisclosureGroup("Show token") {
+                            Text(link.fragment ?? "")
+                                .font(.system(.footnote, design: .monospaced))
+                                .textSelection(.enabled).privacySensitive().padding(.top, 12)
+                            Button("Copy token") {
+                                UIPasteboard.general.string = link.fragment
+                            }.padding(.top, 8)
+                        }.font(.subheadline)
+                        Text("You can stop access anytime by removing this AI agent key in Settings → Active Push Keys.")
+                            .font(.footnote).foregroundStyle(.secondary)
+                    } else if let error {
+                        Text(error).foregroundStyle(.secondary)
+                        if permissionDenied {
+                            Button("Open notification settings") {
+                                if let url = URL(string: UIApplication.openNotificationSettingsURLString) {
+                                    UIApplication.shared.open(url)
+                                }
+                            }.buttonStyle(.bordered)
+                        }
+                        Button("Try again") { attempt = UUID() }.buttonStyle(.borderedProminent)
+                    } else {
+                        ProgressView("Creating your agent link…").frame(maxWidth: .infinity, alignment: .leading)
+                    }
+                }.padding(24)
+            }
+            .background(PatternStyle.background).tint(PatternStyle.accent)
+            .navigationTitle("Agent control").navigationBarTitleDisplayMode(.inline)
+            .toolbar { ToolbarItem(placement: .confirmationAction) { Button("Done") { dismiss() } } }
+            .task(id: attempt) { await prepareLink() }
+            .onChange(of: model.registrationReadiness) { _, _ in issueKeyIfReady() }
+            .onChange(of: model.pushToken) { _, _ in copied = false; issueKeyIfReady() }
+        }
+    }
+
+    private func issueKeyIfReady() {
+        guard waiting, key == nil, model.registrationReadiness == .ready,
+              model.pushToken.range(of: "^(dev_)?[0-9a-fA-F]{64}$", options: .regularExpression) != nil else { return }
+        key = model.createPushKey(name: "AI agent")
+        waiting = false
+    }
+
+    private func prepareLink() async {
+        error = nil
+        permissionDenied = false
+        do {
+            let granted = try await UNUserNotificationCenter.current().requestAuthorization(options: [.alert, .badge, .sound])
+            guard !Task.isCancelled else { return }
+            guard granted else {
+                permissionDenied = true
+                error = "Allow notifications so your agent can send updates to SidePulse."
+                return
+            }
+            waiting = true
+            issueKeyIfReady()
+            if waiting {
+                UIApplication.shared.registerForRemoteNotifications()
+                try await Task.sleep(for: .seconds(20))
+                guard waiting else { return }
+                waiting = false
+                error = "Couldn’t get a push token. Check your connection and try again."
+            }
+        } catch is CancellationError {
+            waiting = false
+        } catch {
+            waiting = false
+            self.error = error.localizedDescription
         }
     }
 }

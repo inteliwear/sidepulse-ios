@@ -15,6 +15,13 @@ struct PushKeyRecord: Identifiable, Codable, Equatable {
     func token(for deviceToken: String) -> String {
         deviceToken + "_" + value
     }
+
+    func agentControlURL(for deviceToken: String) -> URL? {
+        guard deviceToken.range(of: "^(dev_)?[0-9a-fA-F]{64}$", options: .regularExpression) != nil else { return nil }
+        var components = URLComponents(string: "https://bridge.sidepulse.io/agents")!
+        components.fragment = "apns_" + token(for: deviceToken)
+        return components.url
+    }
 }
 
 /// Only locally issued keys are trusted. Removing a record permanently stops

@@ -3,6 +3,28 @@ import XCTest
 @testable import SidePulseTokenFormatting
 
 final class PushKeyRegistryTests: XCTestCase {
+    func testAgentLinkContainsCompleteChannelOnlyInFragment() throws {
+        var registry = PushKeyRegistry()
+        let key = registry.issue(name: "AI agent")
+        for prefix in ["", "dev_"] {
+            let deviceToken = prefix + String(repeating: "ab", count: 32)
+            let link = try XCTUnwrap(key.agentControlURL(for: deviceToken))
+            XCTAssertEqual(link.scheme, "https")
+            XCTAssertEqual(link.host, "bridge.sidepulse.io")
+            XCTAssertEqual(link.path, "/agents")
+            XCTAssertNil(link.query)
+            XCTAssertEqual(link.fragment, "apns_" + deviceToken + "_" + key.value)
+            XCTAssertEqual(link, key.agentControlURL(for: deviceToken))
+        }
+        XCTAssertEqual(registry.records.count, 1)
+        XCTAssertTrue(registry.accepts(key.value))
+        registry.remove(id: key.id)
+        XCTAssertFalse(registry.accepts(key.value))
+        for invalid in ["", "dev_", "not-a-token", String(repeating: "a", count: 63), "ab#fragment"] {
+            XCTAssertNil(key.agentControlURL(for: invalid))
+        }
+    }
+
     func testIssuedKeysAreDistinctAndOnlyShowFourCharacterSuffix() {
         var registry = PushKeyRegistry()
         let first = registry.issue(name: "Mac")

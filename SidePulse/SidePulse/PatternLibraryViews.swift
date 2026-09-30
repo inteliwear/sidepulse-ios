@@ -189,6 +189,7 @@ struct PatternLibraryView: View {
     @State private var newPattern: LibraryPattern?
     @State private var importing = false
     @State private var deleting: LibraryPattern?
+    @State private var showClassics = false
 
     private var matches: [LibraryPattern] {
         store.patterns.filter { search.isEmpty || $0.name.localizedCaseInsensitiveContains(search) }
@@ -199,24 +200,17 @@ struct PatternLibraryView: View {
                 ContentUnavailableView(search.isEmpty ? "Your library starts here" : "No matching patterns",
                                        systemImage: "sparkles", description: Text("Create a pattern or import one shared with you."))
             }
-            ForEach(matches) { pattern in
-                NavigationLink {
-                    PatternDetailView(patternID: pattern.id, store: store, play: play)
-                } label: { PatternLibraryRow(pattern: pattern, chevron: false) }
-                .listRowInsets(EdgeInsets(top: 0, leading: 0, bottom: 0, trailing: 12))
-                .swipeActions {
-                    Button("Delete", role: .destructive) { deleting = pattern }
-                    Button("Edit") { newPattern = pattern }.tint(.blue)
-                }
-                .contextMenu {
-                    Button("Edit", systemImage: "pencil") { newPattern = pattern }
-                    PatternSharingActions(pattern: pattern)
-                    Button("Duplicate", systemImage: "plus.square.on.square") {
-                        var copy = pattern
-                        copy.id = UUID()
-                        copy.name = String((copy.name + " copy").prefix(60))
-                        newPattern = copy
+            ForEach(matches.filter { !$0.isClassicStarter }) { pattern in
+                libraryRow(pattern)
+            }
+            let classics = matches.filter(\.isClassicStarter)
+            if !classics.isEmpty {
+                if search.isEmpty {
+                    DisclosureGroup("Classic colors", isExpanded: $showClassics) {
+                        ForEach(classics) { libraryRow($0) }
                     }
+                } else {
+                    ForEach(classics) { libraryRow($0) }
                 }
             }
         }
@@ -251,6 +245,27 @@ struct PatternLibraryView: View {
             }
         } message: { Text("Shortcuts using this pattern will need another selection.") }
     }
+    private func libraryRow(_ pattern: LibraryPattern) -> some View {
+        NavigationLink {
+            PatternDetailView(patternID: pattern.id, store: store, play: play)
+        } label: { PatternLibraryRow(pattern: pattern, chevron: false) }
+        .listRowInsets(EdgeInsets(top: 0, leading: 0, bottom: 0, trailing: 12))
+        .swipeActions {
+            Button("Delete", role: .destructive) { deleting = pattern }
+            Button("Edit") { newPattern = pattern }.tint(.blue)
+        }
+        .contextMenu {
+            Button("Edit", systemImage: "pencil") { newPattern = pattern }
+            PatternSharingActions(pattern: pattern)
+            Button("Duplicate", systemImage: "plus.square.on.square") {
+                var copy = pattern
+                copy.id = UUID()
+                copy.name = String((copy.name + " copy").prefix(60))
+                newPattern = copy
+            }
+        }
+    }
+
 }
 
 struct PatternLibraryRow: View {

@@ -29,7 +29,7 @@ struct SavedPatternQuery: EntityStringQuery {
         return identifiers.compactMap { id in patterns.first { $0.id == id }.map(SavedPatternEntity.init) }
     }
     func suggestedEntities() async throws -> [SavedPatternEntity] {
-        try PatternLibraryRepository.standard.load().map(SavedPatternEntity.init)
+        try PatternLibraryRepository.standard.load().filter { !$0.isClassicStarter }.map(SavedPatternEntity.init)
     }
     func entities(matching string: String) async throws -> [SavedPatternEntity] {
         try PatternLibraryRepository.standard.load()

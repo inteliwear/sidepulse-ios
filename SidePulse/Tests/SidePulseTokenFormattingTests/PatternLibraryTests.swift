@@ -56,7 +56,7 @@ final class PatternLibraryTests: XCTestCase {
     }
 
     func testShareRoundTripPreservesContentButNeverOverwritesIdentity() throws {
-        let original = LibraryPattern.starters[0]
+        let original = LibraryPattern.classicStarters[0]
         let data = try PatternShareFile.encode(original)
         let imported = try PatternShareFile.decode(data, name: original.name)
         XCTAssertNotEqual(original.id, imported.id)
@@ -160,7 +160,7 @@ final class PatternLibraryTests: XCTestCase {
     }
 
     func testOldLibrariesWithoutSourceStillLoad() throws {
-        let original = LibraryPattern.starters[0]
+        let original = LibraryPattern.classicStarters[0]
         let data = try JSONEncoder().encode(original)
         var json = try XCTUnwrap(JSONSerialization.jsonObject(with: data) as? [String: Any])
         json.removeValue(forKey: "source")
