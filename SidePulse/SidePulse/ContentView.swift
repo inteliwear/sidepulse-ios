@@ -996,15 +996,6 @@ private struct SettingsView: View {
                 } label: {
                     Label("Write to USB", systemImage: "square.and.arrow.down")
                 }
-
-                if let shortcutURL = model.shortcutWriteURL {
-                    Button {
-                        UIPasteboard.general.string = shortcutURL
-                        model.lastMessage = "Copied Shortcut URL"
-                    } label: {
-                        Label("Copy Shortcut URL", systemImage: "link.badge.plus")
-                    }
-                }
             }
 
             Section("Diagnostics") {
