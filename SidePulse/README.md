@@ -1,7 +1,10 @@
 # SidePulse for iOS
 
 SidePulse is a push inbox that can optionally write LED programs to `LEDS.LED`
-on a SidePulse Dot USB drive attached to an iPhone or iPad.
+on a SidePulse Dot USB drive attached to an iPhone.
+
+The app requires iOS 27.0 or later and targets iPhone only; it does not provide
+a native iPad layout.
 
 The app supports:
 
@@ -65,8 +68,8 @@ the separate [trademark policy](../TRADEMARKS.md).
 5. Confirm these capabilities:
    - Push Notifications
    - Background Modes -> Remote notifications
-6. Build and run on a real iPhone or iPad. APNs push tokens do not work on the
-   simulator.
+6. Build with an Xcode version that supports iOS 27, and run on a real iPhone
+   with iOS 27 or later. APNs push tokens do not work on the simulator.
 7. Run `sidepulse link` on your computer and scan its QR code, or tap **Get Push Token** and copy the token into that command.
 8. On the main screen, tap **Select PulseDot in Files**. Open **Browse → Locations →
    PulseDot**, then tap **Open** to allow access to the USB drive folder containing
@@ -416,3 +419,22 @@ The native sampler is covered by `tools/test-pattern-thumbnails.cpp`:
 xcrun clang++ -std=c++17 -O2 -x c++ SidePulse/PatternThumbnailSampler.mm tools/test-pattern-thumbnails.cpp -o /tmp/sidepulse-thumbnail-tests
 /tmp/sidepulse-thumbnail-tests
 ```
+
+
+## OSC 7501-compatible JSON status
+
+The app advertises `status_protocol: 1` during pairing. Re-pair after updating the desktop and phone app to enable status snapshots; no bridge update is required. Existing direct LED control remains available.
+
+The existing push/recovery handler receives complete snapshots under `data`, validates the outer sender key, and persists per-sender/publisher accounting independently of LED writes. No extra status endpoint or fetch is used. A complete snapshot replaces that publisher's records; old or duplicate revisions cannot restore cleared work. Error, Blocked, Working, Done, Idle is the presentation priority. Explicit work never becomes Done because it went quiet; Done visibility lasts 20 minutes while the app can reevaluate it.
+
+Recovery uses the bridge's existing latest-only phone queue and expiry. A running desktop resends snapshots every 60 seconds. Snapshots too large for the conservative push budget use existing direct LED presentation instead; there is no chunking or partial accounting.
+
+A successful direct LED write pauses automatic presentation until a newer snapshot is accepted. Duplicate recovery does not override a manual pattern. Reconnect retries pending automatic output. Mobile background execution and physical device availability still determine when LEDs can be written.
+
+`ProgramStatus` tests use the same `program-status.json` conformance fixture as desktop and the other phone app. They cover replacement, hierarchy, stale replay, clears, Unicode/input validation, sender isolation, persistence, and presentation overrides. Native terminal escape-sequence capture is outside this integration.
+
+The Home screen includes a Sessions summary. Open it to see every reported session with its status, message, progress when provided, agent, sender name, and update time. Child permission/tool records are grouped under their session; errors and blocked work appear first. The list reads the existing accounting ledger, survives restarts, and updates without LED hardware. Removing a sender removes its sessions. Manual LED playback does not clear the list. Statuses are the latest reports, not a connectivity indicator; completed records age out after 20 minutes.
+
+### Session LED patterns
+
+Settings → Session LED patterns lets you choose a saved Pattern Library entry for Working, Needs attention (permission/question/sign-in), Error, Done, and Idle. Defaults preserve the original animations. Missing/deleted library entries fall back to the default for that condition. Preferences survive relaunch. Changing the active condition's pattern updates connected LEDs without requiring a new status; duplicate reports do not replay the same pattern. The switch disables session-driven LED writes independently of the session list. Manual playback still overrides automation until a newer status arrives or session playback is enabled/configured again.

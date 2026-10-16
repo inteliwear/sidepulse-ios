@@ -43,6 +43,8 @@ struct ContentView: View {
                         .buttonStyle(.bordered)
                     }
 
+                    ProgramSessionsPanel(model: model)
+
                     if model.hasFolderAccess {
                         Button { isShowingSettings = true } label: {
                             DotConnectionStatus(isConnected: model.isDotConnected)
@@ -889,6 +891,10 @@ private struct SettingsView: View {
                 }
             }
 
+            Section("Sessions") {
+                NavigationLink("Session LED patterns") { SessionLEDSettingsView(model: model) }
+            }
+
             FirmwareSettingsSection(firmware: firmware, isConnected: model.isDotConnected)
 
             Section("Link to Your Mac") {
@@ -1173,5 +1179,149 @@ private struct SidePulseShortcutsBadge: View {
                 .accessibilityHidden(true)
             }
             .accessibilityLabel("SidePulse in Shortcuts")
+    }
+}
+
+private struct ProgramSessionsPanel: View {
+    @Environment(\.dynamicTypeSize) private var typeSize
+    @ObservedObject var model: AppModel
+    var body: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            NavigationLink {
+                ProgramSessionsView(model: model).toolbar(.visible, for: .navigationBar)
+            } label: {
+                HStack {
+                    if typeSize.isAccessibilitySize { Text("Sessions").font(.headline) }
+                    else { Label("Sessions", systemImage: "terminal").font(.headline) }
+                    Spacer()
+                    if !typeSize.isAccessibilitySize {
+                        Text(model.programSessions.isEmpty ? "View all" : "\(model.programSessions.count)")
+                            .font(.subheadline).foregroundStyle(.secondary)
+                    }
+                    Image(systemName: "chevron.right").font(.caption.weight(.semibold)).foregroundStyle(.secondary)
+                }.foregroundStyle(.primary).frame(minHeight: 44).contentShape(Rectangle())
+            }.buttonStyle(.plain).accessibilityIdentifier("openSessions")
+            if model.programSessions.isEmpty {
+                Text("No sessions yet").font(.subheadline.weight(.medium))
+                Text("Sessions from your linked computer appear here, even without a connected Dot.")
+                    .font(.subheadline).foregroundStyle(.secondary)
+            } else {
+                ForEach(Array(model.programSessions.prefix(3))) { session in
+                    Divider()
+                    ProgramSessionRow(session: session, sender: senderName(session), compact: true)
+                }
+            }
+        }.padding(18).frame(maxWidth: .infinity, alignment: .leading)
+            .background(PatternStyle.card, in: RoundedRectangle(cornerRadius: 20))
+    }
+    private func senderName(_ session: ProgramSession) -> String {
+        model.activePushKeys.first { $0.id.uuidString == session.sender }?.name ?? "Linked computer"
+    }
+}
+
+private struct ProgramSessionsView: View {
+    @ObservedObject var model: AppModel
+    var body: some View {
+        List {
+            Section {
+                Text("Latest reported status from your linked computers. Sessions update even when your Dot is disconnected.")
+                    .font(.subheadline).foregroundStyle(.secondary)
+            }
+            if model.programSessions.isEmpty {
+                ContentUnavailableView("No sessions yet", systemImage: "terminal", description: Text("Link your computer and start an agent session to see its status here."))
+            } else {
+                Section("\(model.programSessions.count) sessions") {
+                    ForEach(model.programSessions) { session in
+                        ProgramSessionRow(session: session,
+                            sender: model.activePushKeys.first { $0.id.uuidString == session.sender }?.name ?? "Linked computer")
+                            .padding(.vertical, 6)
+                    }
+                }
+            }
+        }.navigationTitle("Sessions").navigationBarTitleDisplayMode(.inline)
+            .tint(PatternStyle.accent)
+    }
+}
+
+private struct ProgramSessionRow: View {
+    let session: ProgramSession
+    let sender: String
+    var compact = false
+    private var color: Color {
+        switch session.status.state {
+        case "blocked": return .orange
+        case "error": return .red
+        case "working": return .cyan
+        case "done": return .green
+        default: return .secondary
+        }
+    }
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text(session.title).font(.headline).lineLimit(compact ? 2 : nil)
+            HStack(spacing: 6) {
+                Circle().fill(color).frame(width: 7, height: 7).accessibilityHidden(true)
+                Text(session.statusLabel).font(.subheadline.weight(.semibold)).foregroundStyle(.primary)
+                if let progress = session.status.progress {
+                    Text("\(progress)%").font(.subheadline.monospacedDigit()).foregroundStyle(.secondary)
+                }
+            }
+            if let message = session.status.msg, !message.isEmpty {
+                Text(message).font(.subheadline).foregroundStyle(.secondary).lineLimit(compact ? 2 : nil)
+            }
+            if let progress = session.status.progress {
+                ProgressView(value: Double(progress), total: 100).tint(color).accessibilityLabel("Progress")
+            }
+            Text("\(session.appName) · \(sender)").font(.caption).foregroundStyle(.secondary)
+            if !compact {
+                Text("Updated \(Date(timeIntervalSince1970: Double(session.updatedAt) / 1000), style: .relative) ago")
+                    .font(.caption).foregroundStyle(.secondary)
+            }
+        }.frame(maxWidth: .infinity, alignment: .leading)
+    }
+}
+
+private struct SessionLEDSettingsView: View {
+    @ObservedObject var model: AppModel
+    @ObservedObject private var library = PatternLibraryStore.shared
+
+    var body: some View {
+        Form {
+            Section {
+                Toggle("Use sessions for LEDs", isOn: Binding(
+                    get: { model.sessionLEDSettings.enabled }, set: model.setSessionLEDsEnabled))
+            } footer: {
+                Text("The session list always updates. Turning this off stops automatic LED changes and leaves the current pattern playing.")
+            }
+            Section {
+                ForEach(SessionLEDSettings.conditions, id: \.0) { state, label in
+                    Picker(label, selection: Binding<String>(
+                        get: { model.sessionLEDSettings.patterns[state]?.uuidString ?? "" },
+                        set: { model.setSessionPattern(state, id: UUID(uuidString: $0)) })) {
+                        Text("Default").tag("")
+                        if let id = model.sessionLEDSettings.patterns[state], !library.patterns.contains(where: { $0.id == id }) {
+                            Text("Default (pattern removed)").tag(id.uuidString)
+                        }
+                        ForEach(library.patterns) { pattern in Text(pattern.name).tag(pattern.id.uuidString) }
+                    }.pickerStyle(.navigationLink)
+                }
+            } header: {
+                Text("Pattern for each condition")
+            } footer: {
+                Text("Errors take priority, followed by sessions needing attention, working, done, and idle. Needs attention includes permission requests, questions, and sign-in. Defaults are used if a selected pattern is removed.")
+            }
+            Section {
+                NavigationLink("Pattern Library") {
+                    PatternLibraryView(store: library, play: { pattern in
+                        do {
+                            _ = try DriveWriter.shared.write(pattern.ledText)
+                            model.recordWriteSuccess("Played \(pattern.name)")
+                        } catch { model.recordError(error) }
+                    })
+                }
+            } footer: {
+                Text("Create or import patterns in your library, then choose them above. Selecting a pattern applies it to the current condition when a Dot is connected.")
+            }
+        }.navigationTitle("Session LED patterns").navigationBarTitleDisplayMode(.inline)
     }
 }

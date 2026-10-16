@@ -17,6 +17,7 @@
 		9F0000010000000000000008 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 9F0000010000000000000108 /* Assets.xcassets */; };
 		9F0000010000000000000009 /* EventLog.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9F0000010000000000000112 /* EventLog.swift */; };
 		9F0000010000000000000010 /* PushPayload.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9F0000010000000000000113 /* PushPayload.swift */; };
+		7C7501000000000000000010 /* ProgramStatus.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7C7501000000000000000113 /* ProgramStatus.swift */; };
 		9F0000010000000000000011 /* PushTokenFormatter.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9F0000010000000000000114 /* PushTokenFormatter.swift */; };
 		9F0000010000000000000012 /* PairingRegistrationGate.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9F0000010000000000000115 /* PairingRegistrationGate.swift */; };
 		9F0000010000000000000020 /* PatternLibrary.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9F0000010000000000000120 /* PatternLibrary.swift */; };
@@ -45,6 +46,7 @@
 		9F0000010000000000000111 /* SidePulse.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = SidePulse.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		9F0000010000000000000112 /* EventLog.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EventLog.swift; sourceTree = "<group>"; };
 		9F0000010000000000000113 /* PushPayload.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PushPayload.swift; sourceTree = "<group>"; };
+		7C7501000000000000000113 /* ProgramStatus.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProgramStatus.swift; sourceTree = "<group>"; };
 		9F0000010000000000000114 /* PushTokenFormatter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PushTokenFormatter.swift; sourceTree = "<group>"; };
 		9F0000010000000000000115 /* PairingRegistrationGate.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PairingRegistrationGate.swift; sourceTree = "<group>"; };
 		9F0000010000000000000120 /* PatternLibrary.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PatternLibrary.swift; sourceTree = "<group>"; };
@@ -97,6 +99,7 @@
 				9F0000010000000000000105 /* AppDelegate.swift */,
 				9F0000010000000000000112 /* EventLog.swift */,
 				9F0000010000000000000113 /* PushPayload.swift */,
+				7C7501000000000000000113 /* ProgramStatus.swift */,
 				9F0000010000000000000114 /* PushTokenFormatter.swift */,
 				9F0000010000000000000124 /* PushKeyRegistry.swift */,
 				9F0000010000000000000115 /* PairingRegistrationGate.swift */,
@@ -202,6 +205,7 @@
 				9F0000010000000000000005 /* AppDelegate.swift in Sources */,
 				9F0000010000000000000009 /* EventLog.swift in Sources */,
 				9F0000010000000000000010 /* PushPayload.swift in Sources */,
+				7C7501000000000000000010 /* ProgramStatus.swift in Sources */,
 				9F0000010000000000000011 /* PushTokenFormatter.swift in Sources */,
 				9F0000010000000000000024 /* PushKeyRegistry.swift in Sources */,
 				9F0000010000000000000012 /* PairingRegistrationGate.swift in Sources */,
@@ -264,7 +268,7 @@
 				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
 				GCC_WARN_UNUSED_FUNCTION = YES;
 				GCC_WARN_UNUSED_VARIABLE = YES;
-				IPHONEOS_DEPLOYMENT_TARGET = 26.0;
+				IPHONEOS_DEPLOYMENT_TARGET = 27.0;
 				MTL_ENABLE_DEBUG_INFO = INCLUDE_SOURCE;
 				MTL_FAST_MATH = YES;
 				ONLY_ACTIVE_ARCH = YES;
@@ -319,7 +323,7 @@
 				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
 				GCC_WARN_UNUSED_FUNCTION = YES;
 				GCC_WARN_UNUSED_VARIABLE = YES;
-				IPHONEOS_DEPLOYMENT_TARGET = 26.0;
+				IPHONEOS_DEPLOYMENT_TARGET = 27.0;
 				MTL_ENABLE_DEBUG_INFO = NO;
 				MTL_FAST_MATH = YES;
 				SDKROOT = iphoneos;
@@ -346,7 +350,6 @@
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
 				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
-				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPad = "UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
 				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPhone = "UIInterfaceOrientationPortrait UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
@@ -359,7 +362,7 @@
 				SWIFT_EMIT_LOC_STRINGS = YES;
 				SWIFT_VERSION = 5.0;
 				SWIFT_OBJC_BRIDGING_HEADER = "SidePulse/SidePulse-Bridging-Header.h";
-				TARGETED_DEVICE_FAMILY = "1,2";
+				TARGETED_DEVICE_FAMILY = 1;
 			};
 			name = Debug;
 		};
@@ -381,7 +384,6 @@
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
 				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
-				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPad = "UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
 				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPhone = "UIInterfaceOrientationPortrait UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
@@ -394,7 +396,7 @@
 				SWIFT_EMIT_LOC_STRINGS = YES;
 				SWIFT_VERSION = 5.0;
 				SWIFT_OBJC_BRIDGING_HEADER = "SidePulse/SidePulse-Bridging-Header.h";
-				TARGETED_DEVICE_FAMILY = "1,2";
+				TARGETED_DEVICE_FAMILY = 1;
 			};
 			name = Release;
 		};

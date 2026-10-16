@@ -18,7 +18,7 @@ let package = Package(
                 "PatternThumbnailRenderer.swift", "PatternThumbnailSampler.mm", "PatternThumbnailSampler.h",
                 "SidePulse-Bridging-Header.h", "SidePulse.entitlements", "SidePulseApp.swift", "WriteLEDsIntent.swift"
             ],
-            sources: ["PushTokenFormatter.swift", "PairingRegistrationGate.swift", "PatternLibrary.swift", "PushKeyRegistry.swift", "PushPayload.swift", "Firmware.swift", "FirmwareUpdateModel.swift", "DriveWriter.swift", "EventLog.swift"]
+            sources: ["ProgramStatus.swift", "PushTokenFormatter.swift", "PairingRegistrationGate.swift", "PatternLibrary.swift", "PushKeyRegistry.swift", "PushPayload.swift", "Firmware.swift", "FirmwareUpdateModel.swift", "DriveWriter.swift", "EventLog.swift"]
         ),
         .testTarget(
             name: "SidePulseTokenFormattingTests",

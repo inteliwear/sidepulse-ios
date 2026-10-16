@@ -197,6 +197,68 @@ final class AppModel: ObservableObject {
     @Published var pairingNotice: PairingNotice?
     @Published var lastRecoveryStatus = "Not checked"
 
+    @Published private(set) var programSessions: [ProgramSession] = []
+    @Published private(set) var sessionLEDSettings = UserDefaults.standard.data(forKey: "sessionLEDSettings")
+        .flatMap { try? JSONDecoder().decode(SessionLEDSettings.self, from: $0) } ?? SessionLEDSettings()
+
+    func setSessionLEDsEnabled(_ enabled: Bool) {
+        sessionLEDSettings.enabled = enabled
+        saveSessionLEDSettings()
+    }
+    func setSessionPattern(_ state: String, id: UUID?) {
+        guard SessionLEDSettings.conditions.contains(where: { $0.0 == state }) else { return }
+        sessionLEDSettings.patterns[state] = id
+        saveSessionLEDSettings()
+    }
+    private func saveSessionLEDSettings() {
+        if let data = try? JSONEncoder().encode(sessionLEDSettings) {
+            UserDefaults.standard.set(data, forKey: "sessionLEDSettings")
+        }
+        if sessionLEDSettings.enabled && !programSessions.isEmpty {
+            programPresentation.statusChanged()
+            saveProgramAccounting()
+        }
+        renderProgramStatus()
+    }
+
+    private var programAccounting = (UserDefaults.standard.data(forKey: "programAccounting").flatMap { try? JSONDecoder().decode(ProgramAccounting.self, from: $0) }) ?? ProgramAccounting()
+    private var programPresentation = ProgramPresentation(enabled: UserDefaults.standard.bool(forKey: "programPresentationEnabled"))
+
+    private func saveProgramAccounting() {
+        if let data = try? JSONEncoder().encode(programAccounting) { UserDefaults.standard.set(data, forKey: "programAccounting") }
+        UserDefaults.standard.set(programPresentation.enabled, forKey: "programPresentationEnabled")
+    }
+    private func renderProgramStatus() {
+        if programAccounting.retainSenders(Set(pushKeys.records.filter { !$0.isExpired(at: Date()) }.map { $0.id.uuidString })) { saveProgramAccounting() }
+        programSessions = programAccounting.sessions()
+        guard programPresentation.enabled && sessionLEDSettings.enabled else { return }
+        let status = programAccounting.representative()
+        let state = status?.state ?? "idle"
+        lastMessage = status?.msg ?? status?.title ?? "Program status: \(state)"
+        let program = sessionLEDSettings.program(for: state, library: PatternLibraryStore.shared.patterns)
+        let outputKey = state + "\u{0}" + program
+        guard programPresentation.needsWrite(outputKey) else { return }
+        do {
+            _ = try DriveWriter.shared.write(program)
+            programPresentation.didWrite(outputKey)
+        } catch { /* Retain state and retry after device reconnect/recovery. */ }
+    }
+    private func receiveProgramStatus(_ raw: [String: Any], key: String?) -> Bool {
+        guard let key, pushKeys.accepts(key),
+              let sender = pushKeys.records.first(where: { $0.value == key }),
+              let snapshot = try? ProgramSnapshot.parse(raw) else { return false }
+        if programAccounting.retainSenders(Set(pushKeys.records.filter { !$0.isExpired(at: Date()) }.map { $0.id.uuidString })) { saveProgramAccounting() }
+        do {
+            if try programAccounting.receive(snapshot, sender: sender.id.uuidString) {
+                _ = pushKeys.receive(key: key, messageID: "status:\(snapshot.publisher):\(snapshot.revision)")
+                programPresentation.statusChanged()
+                saveProgramAccounting()
+            }
+            renderProgramStatus()
+            return true
+        } catch { return false }
+    }
+
     private var recoveryInProgress = false
     private var lastRecoveryAttempt: Date?
     private var recoveryWaiters: [CheckedContinuation<Void, Never>] = []
@@ -240,6 +302,7 @@ final class AppModel: ObservableObject {
     func removePushKey(_ id: UUID) {
         guard let key = pushKeys.records.first(where: { $0.id == id }) else { return }
         pushKeys.remove(id: id)
+        renderProgramStatus()
         if pushKeys.records.isEmpty {
             isBridgeLinked = false
             requiresRelinking = true
@@ -316,9 +379,11 @@ final class AppModel: ObservableObject {
                 do { try await Task.sleep(for: .seconds(60)) } catch { return }
                 guard let self else { return }
                 self.removeExpiredPushKeys()
+                self.renderProgramStatus()
             }
         }
         refreshFolderStatus()
+        renderProgramStatus()
     }
 
     func setPushToken(from deviceToken: Data) {
@@ -507,6 +572,7 @@ final class AppModel: ObservableObject {
                         "platform": "ios",
                         "bundle_id": "io.sidepulse.ios",
                         "push_token": sharedToken,
+                        "status_protocol": 1,
                     ],
                 ]
                 var request = URLRequest(url: endpoint)
@@ -562,11 +628,15 @@ final class AppModel: ObservableObject {
     }
 
     func refreshFolderStatus() {
+        let wasConnected = isDotConnected
         hasFolderAccess = DriveWriter.shared.hasSavedFolder
         isDotConnected = DriveWriter.shared.isFolderAvailable
+        if isDotConnected && !wasConnected { programPresentation.deviceChanged(); renderProgramStatus() }
     }
 
     func recordWriteSuccess(_ message: String) {
+        programPresentation.manualWrite()
+        saveProgramAccounting()
         EventLog.append(message)
         lastMessage = message
         refreshFolderStatus()
@@ -582,6 +652,7 @@ final class AppModel: ObservableObject {
     }
 
     func recordReceivedPush(_ push: ReceivedPush) {
+        if push.writeStatus == .wrote { programPresentation.manualWrite(); saveProgramAccounting() }
         var next = [push]
         next.append(contentsOf: receivedPushes)
         if next.count > 50 {
@@ -655,6 +726,8 @@ final class AppModel: ObservableObject {
             if DriveWriter.shared.hasSavedFolder {
                 do {
                     _ = try DriveWriter.shared.write(ledText)
+                    programPresentation.manualWrite()
+                    saveProgramAccounting()
                     status = .wrote
                 } catch {
                     status = .failed
@@ -691,6 +764,10 @@ final class AppModel: ObservableObject {
     }
 
     func processPushAndCleanUp(_ userInfo: [AnyHashable: Any], source: String) async -> Bool {
+        if let snapshot = ProgramAccounting.pushedSnapshot(userInfo) {
+            // Only the outer key is bound by the bridge; nested data cannot authorize itself.
+            return receiveProgramStatus(snapshot, key: userInfo["shared_key"] as? String)
+        }
         let previousID = receivedPushes.first?.id
         let didHandle = processPush(userInfo, source: source)
         let resolution = PushPayloadResolver.resolve(userInfo: userInfo)
@@ -849,7 +926,7 @@ final class AppModel: ObservableObject {
             } else {
                 continue
             }
-            let containsLEDUpdate = PushPayloadResolver.resolve(userInfo: payload).resolvedLEDText != nil
+            let containsLEDUpdate = PushPayloadResolver.resolve(userInfo: payload).resolvedLEDText != nil || ProgramAccounting.pushedSnapshot(payload) != nil
             if await processPushAndCleanUp(payload, source: source), containsLEDUpdate {
                 handled += 1
             }
