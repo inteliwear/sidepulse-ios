@@ -43,8 +43,10 @@ installed desktop CLI. Connect and authorize a Dot for LED checks.
   routing after the single-validation cleanup.
 - iOS simulator app and widget build pass. Each accepted update now refreshes
   the session list and Live Activity once; LEDs use that same session list.
-- Desktop: 900 tests and 597 subtests pass, including six isolated local bridge
-  checks. Distinct active source/session rows are counted separately.
+- Desktop: 914 tests and 600 subtests pass, including six isolated local bridge
+  checks. Distinct active source/session rows are counted separately. Mac sleep
+  control, history sampling, and output holds run in the daemon without the tray;
+  those local controls do not change the bridge/mobile status format.
 - These latest source changes were not deployed to production or reinstalled on
   the physical iPhone. Physical USB playback was not retested.
 
