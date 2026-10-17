@@ -197,10 +197,21 @@ final class AppModel: ObservableObject {
     @Published var pairingNotice: PairingNotice?
     @Published var lastRecoveryStatus = "Not checked"
 
+    @Published var showSessions = false
     @Published private(set) var programSessions: [ProgramSession] = []
     @Published private(set) var sessionLEDSettings = UserDefaults.standard.data(forKey: "sessionLEDSettings")
         .flatMap { try? JSONDecoder().decode(SessionLEDSettings.self, from: $0) } ?? SessionLEDSettings()
 
+    @Published private(set) var sessionLiveActivityEnabled = UserDefaults.standard.object(forKey: "sessionLiveActivityEnabled") as? Bool ?? true
+    func setSessionLiveActivityEnabled(_ enabled: Bool) {
+        sessionLiveActivityEnabled = enabled
+        UserDefaults.standard.set(enabled, forKey: "sessionLiveActivityEnabled")
+        refreshSessionLiveActivity(allowStart: enabled)
+    }
+    func refreshSessionLiveActivity(allowStart: Bool = false) {
+        SessionLiveActivityController.shared.refresh(SessionActivitySummary(sessions: programSessions),
+            enabled: sessionLiveActivityEnabled, allowStart: allowStart)
+    }
     func setSessionLEDsEnabled(_ enabled: Bool) {
         sessionLEDSettings.enabled = enabled
         saveSessionLEDSettings()
@@ -228,11 +239,17 @@ final class AppModel: ObservableObject {
         if let data = try? JSONEncoder().encode(programAccounting) { UserDefaults.standard.set(data, forKey: "programAccounting") }
         UserDefaults.standard.set(programPresentation.enabled, forKey: "programPresentationEnabled")
     }
-    private func renderProgramStatus() {
+    func clearSession(id: String) {
+        guard programAccounting.clearSession(id: id) else { return }
+        saveProgramAccounting()
+        renderProgramStatus()
+    }
+    private func renderProgramStatus(allowActivityStart: Bool = false) {
         if programAccounting.retainSenders(Set(pushKeys.records.filter { !$0.isExpired(at: Date()) }.map { $0.id.uuidString })) { saveProgramAccounting() }
         programSessions = programAccounting.sessions()
+        refreshSessionLiveActivity(allowStart: allowActivityStart)
         guard programPresentation.enabled && sessionLEDSettings.enabled else { return }
-        let status = programAccounting.representative()
+        let status = programSessions.first?.status
         let state = status?.state ?? "idle"
         lastMessage = status?.msg ?? status?.title ?? "Program status: \(state)"
         let program = sessionLEDSettings.program(for: state, library: PatternLibraryStore.shared.patterns)
@@ -245,16 +262,16 @@ final class AppModel: ObservableObject {
     }
     private func receiveProgramStatus(_ raw: [String: Any], key: String?) -> Bool {
         guard let key, pushKeys.accepts(key),
-              let sender = pushKeys.records.first(where: { $0.value == key }),
-              let snapshot = try? ProgramSnapshot.parse(raw) else { return false }
+              let sender = pushKeys.records.first(where: { $0.value == key }) else { return false }
         if programAccounting.retainSenders(Set(pushKeys.records.filter { !$0.isExpired(at: Date()) }.map { $0.id.uuidString })) { saveProgramAccounting() }
         do {
-            if try programAccounting.receive(snapshot, sender: sender.id.uuidString) {
-                _ = pushKeys.receive(key: key, messageID: "status:\(snapshot.publisher):\(snapshot.revision)")
+            let accepted = try programAccounting.receiveMessage(raw, sender: sender.id.uuidString)
+            if accepted {
+                _ = pushKeys.receive(key: key, messageID: "status:\(raw["publisher"] ?? ""):\(raw["scope"] ?? ""):\(raw["seq"] ?? "")")
                 programPresentation.statusChanged()
                 saveProgramAccounting()
             }
-            renderProgramStatus()
+            renderProgramStatus(allowActivityStart: accepted)
             return true
         } catch { return false }
     }
@@ -572,7 +589,7 @@ final class AppModel: ObservableObject {
                         "platform": "ios",
                         "bundle_id": "io.sidepulse.ios",
                         "push_token": sharedToken,
-                        "status_protocol": 1,
+                        "status_protocol": 2,
                     ],
                 ]
                 var request = URLRequest(url: endpoint)
@@ -764,9 +781,10 @@ final class AppModel: ObservableObject {
     }
 
     func processPushAndCleanUp(_ userInfo: [AnyHashable: Any], source: String) async -> Bool {
-        if let snapshot = ProgramAccounting.pushedSnapshot(userInfo) {
+        if ProgramUpdate.isStatusPayload(userInfo) {
+            guard let update = ProgramUpdate.pushedUpdate(userInfo) else { return false }
             // Only the outer key is bound by the bridge; nested data cannot authorize itself.
-            return receiveProgramStatus(snapshot, key: userInfo["shared_key"] as? String)
+            return receiveProgramStatus(update, key: userInfo["shared_key"] as? String)
         }
         let previousID = receivedPushes.first?.id
         let didHandle = processPush(userInfo, source: source)
@@ -926,7 +944,7 @@ final class AppModel: ObservableObject {
             } else {
                 continue
             }
-            let containsLEDUpdate = PushPayloadResolver.resolve(userInfo: payload).resolvedLEDText != nil || ProgramAccounting.pushedSnapshot(payload) != nil
+            let containsLEDUpdate = PushPayloadResolver.resolve(userInfo: payload).resolvedLEDText != nil || ProgramUpdate.pushedUpdate(payload) != nil
             if await processPushAndCleanUp(payload, source: source), containsLEDUpdate {
                 handled += 1
             }

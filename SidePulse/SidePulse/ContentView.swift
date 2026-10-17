@@ -119,6 +119,7 @@ struct ContentView: View {
                 .padding(.vertical, 12)
             }
             .background(PatternStyle.background)
+            .navigationDestination(isPresented: $model.showSessions) { ProgramSessionsView(model: model) }
             .tint(PatternStyle.accent)
             .navigationTitle("")
             .navigationBarTitleDisplayMode(.inline)
@@ -184,6 +185,10 @@ struct ContentView: View {
             }
         }
         .onOpenURL { url in
+            if url.scheme?.lowercased() == "sidepulse", url.host?.lowercased() == "sessions" {
+                isShowingSettings = false; activeSheet = nil; model.showSessions = true
+                return
+            }
             if PatternShareLink.recognizes(url) {
                 activeSheet = nil
                 library.receiveLink(url)
@@ -202,6 +207,7 @@ struct ContentView: View {
         }
         .onAppear {
             model.refreshFolderStatus()
+            model.refreshSessionLiveActivity(allowStart: true)
             model.recoverQueuedPushes()
         }
         .onChange(of: model.pendingPairing) { pairing in
@@ -224,6 +230,7 @@ struct ContentView: View {
         .onChange(of: scenePhase) { phase in
             if phase == .active {
                 model.refreshFolderStatus()
+                model.refreshSessionLiveActivity(allowStart: true)
                 model.recoverQueuedPushes()
                 library.reload()
             } else {
@@ -893,6 +900,10 @@ private struct SettingsView: View {
 
             Section("Sessions") {
                 NavigationLink("Session LED patterns") { SessionLEDSettingsView(model: model) }
+                Toggle("Session Live Activity", isOn: Binding(
+                    get: { model.sessionLiveActivityEnabled }, set: model.setSessionLiveActivityEnabled))
+                Text("One combined summary on the Lock Screen and Dynamic Island. Open SidePulse to start it; it updates as session reports arrive.")
+                    .font(.footnote).foregroundStyle(.secondary)
             }
 
             FirmwareSettingsSection(firmware: firmware, isConnected: model.isDotConnected)
@@ -1226,6 +1237,8 @@ private struct ProgramSessionsView: View {
             Section {
                 Text("Latest reported status from your linked computers. Sessions update even when your Dot is disconnected.")
                     .font(.subheadline).foregroundStyle(.secondary)
+                Text("Swipe left to clear a session until its next update.")
+                    .font(.subheadline).foregroundStyle(.secondary)
             }
             if model.programSessions.isEmpty {
                 ContentUnavailableView("No sessions yet", systemImage: "terminal", description: Text("Link your computer and start an agent session to see its status here."))
@@ -1235,6 +1248,13 @@ private struct ProgramSessionsView: View {
                         ProgramSessionRow(session: session,
                             sender: model.activePushKeys.first { $0.id.uuidString == session.sender }?.name ?? "Linked computer")
                             .padding(.vertical, 6)
+                            .swipeActions(edge: .trailing, allowsFullSwipe: true) {
+                                Button(role: .destructive) {
+                                    model.clearSession(id: session.id)
+                                } label: {
+                                    Label("Clear", systemImage: "xmark.circle")
+                                }
+                            }
                     }
                 }
             }

@@ -31,3 +31,7 @@ The full license governs these obligations.
 The copyright license for artwork does not grant trademark rights.
 The SidePulse name and logos are trademarks of InteliWEAR LLC. See the
 [trademark policy](TRADEMARKS.md) for permitted uses and fork branding.
+
+Session accounting retains the 64 most recently updated nonempty sessions across all paired sources. Fresh updates evict the least recently updated session when needed; accepted arrival order survives restarts. Stale updates do not refresh recency, and eviction preserves replay guards.
+
+Session tracking and configurable session LEDs, direct remote writes, Shortcuts, and the combined iOS Live Activity are described in the [app README](SidePulse/README.md#session-status-and-direct-writes).

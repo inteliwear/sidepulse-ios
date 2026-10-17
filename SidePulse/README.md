@@ -421,20 +421,70 @@ xcrun clang++ -std=c++17 -O2 -x c++ SidePulse/PatternThumbnailSampler.mm tools/t
 ```
 
 
-## OSC 7501-compatible JSON status
 
-The app advertises `status_protocol: 1` during pairing. Re-pair after updating the desktop and phone app to enable status snapshots; no bridge update is required. Existing direct LED control remains available.
+## Session status and direct writes
 
-The existing push/recovery handler receives complete snapshots under `data`, validates the outer sender key, and persists per-sender/publisher accounting independently of LED writes. No extra status endpoint or fetch is used. A complete snapshot replaces that publisher's records; old or duplicate revisions cannot restore cleared work. Error, Blocked, Working, Done, Idle is the presentation priority. Explicit work never becomes Done because it went quiet; Done visibility lasts 20 minutes while the app can reevaluate it.
+The apps support three independent paths:
 
-Recovery uses the bridge's existing latest-only phone queue and expiry. A running desktop resends snapshots every 60 seconds. Snapshots too large for the conservative push budget use existing direct LED presentation instead; there is no chunking or partial accounting.
+1. **Session tracking:** authorized OSC-style JSON updates replace one current
+   state per sender, publisher, and scope. The phone owns its session list and
+   chooses the LED pattern locally.
+2. **Direct remote LED writes:** an authorized remote LED payload writes its
+   requested program, without changing session state.
+3. **Shortcut actions:** a local shortcut plays a saved pattern or raw LED program,
+   without changing session state.
 
-A successful direct LED write pauses automatic presentation until a newer snapshot is accepted. Duplicate recovery does not override a manual pattern. Reconnect retries pending automatic output. Mobile background execution and physical device availability still determine when LEDs can be written.
+Settings → **Session LED patterns** provides **Use sessions for LEDs** and a
+library-pattern choice for Working, Needs attention, Error, Done, and Idle.
+Turning session LEDs off keeps tracking active and leaves direct writes available.
+Deleting a chosen pattern falls back to that condition's built-in pattern.
 
-`ProgramStatus` tests use the same `program-status.json` conformance fixture as desktop and the other phone app. They cover replacement, hierarchy, stale replay, clears, Unicode/input validation, sender isolation, persistence, and presentation overrides. Native terminal escape-sequence capture is outside this integration.
+A successful direct write owns LED output until a newer accepted session update
+arrives. Duplicate/stale delivery and reconnecting do not resume session output.
+Changing session settings is an explicit request to apply those settings.
+Sessions continue to update independently of USB availability and manual output.
 
-The Home screen includes a Sessions summary. Open it to see every reported session with its status, message, progress when provided, agent, sender name, and update time. Child permission/tool records are grouped under their session; errors and blocked work appear first. The list reads the existing accounting ledger, survives restarts, and updates without LED hardware. Removing a sender removes its sessions. Manual LED playback does not clear the list. Statuses are the latest reports, not a connectivity indicator; completed records age out after 20 minutes.
+Only individual `program_status` updates are accepted. Session completion, errors,
+and removal use explicit `done`, `error`, and `clear` states. Snapshot receive mode
+and its capacity rules are removed; old snapshot payloads are rejected before
+direct-write routing. Only the current saved-session format is supported. Earlier
+cache formats start fresh and rebuild from incoming updates; their old sessions
+and sequence guards are not imported.
 
-### Session LED patterns
+Paired senders and publishers remain isolated. The 64 most recently updated
+nonempty sessions are retained, with the oldest evicted first. Duplicate/stale
+updates do not refresh recency. Clear, local dismissal, and eviction preserve
+sequence guards across restarts. Done is hidden after 20 minutes; silence does
+not imply completion. Both apps can clear a row until a newer update arrives.
 
-Settings → Session LED patterns lets you choose a saved Pattern Library entry for Working, Needs attention (permission/question/sign-in), Error, Done, and Idle. Defaults preserve the original animations. Missing/deleted library entries fall back to the default for that condition. Preferences survive relaunch. Changing the active condition's pattern updates connected LEDs without requiring a new status; duplicate reports do not replay the same pattern. The switch disables session-driven LED writes independently of the session list. Manual playback still overrides automation until a newer status arrives or session playback is enabled/configured again.
+Pairing advertises `status_protocol: 2`. Status messages travel in the existing
+bridge's `data` object or JSON string, with the authorized key outside `data`.
+Queue recovery uses the same receiver as live push. The bridge retains up to
+10 latest session values per routing key for at most 24 hours; missed/expired
+clears cannot be reconstructed by the phone.
+
+The shared `program-updates.json` test fixture exercises individual states,
+normalization, replacement, stale replay, and session-list presentation. Tests
+also cover multiple senders, recency eviction, saved-session replay guards, manual
+presentation ownership, dismissal, and pattern preferences. Physical USB output
+still requires an attached authorized device. See [verification and human checks](docs/mobile-session-status-testing.md) for the latest source results and the limits of earlier device evidence.
+
+### iOS session Live Activity
+
+Settings → Sessions → **Session Live Activity** enables one combined Lock Screen
+and Dynamic Island summary. It shows counts and the highest-priority session,
+using the same Error → Blocked → Working → Done → Idle ordering as the list.
+Message text is shortened only for the activity's display budget. Tap the activity
+to open Sessions. Clearing/revoking the last visible session or disabling the
+setting ends the activity. LED settings and direct writes do not hide it.
+
+Open SidePulse to start the activity. Existing activities update from accepted
+reports when iOS runs the app, including delivered background notifications.
+A stale indicator distinguishes an old report from a fresh update. This uses
+local ActivityKit updates; it does not add a new bridge endpoint or ActivityKit
+push channel. iOS controls background delivery, so updates are not guaranteed
+while the app is suspended or terminated. See [Apple's Live Activities lifecycle](https://developer.apple.com/documentation/activitykit/displaying-live-data-with-live-activities).
+
+The Xcode project embeds the `SessionActivityWidget` extension. Build/sign the
+app and extension together. `SessionActivitySummary` is covered by the Swift
+package tests; the full iOS build checks the ActivityKit/WidgetKit implementation.

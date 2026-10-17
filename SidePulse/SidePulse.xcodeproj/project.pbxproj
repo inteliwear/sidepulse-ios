@@ -6,6 +6,17 @@
 	objectVersion = 56;
 	objects = {
 
+
+/* Begin PBXCopyFilesBuildPhase section */
+        7501AC710000000000000016 = {isa = PBXCopyFilesBuildPhase; buildActionMask = 2147483647; dstPath = ""; dstSubfolderSpec = 13; files = (7501AC710000000000000011, ); name = "Embed App Extensions"; runOnlyForDeploymentPostprocessing = 0; };
+/* End PBXCopyFilesBuildPhase section */
+/* Begin PBXContainerItemProxy section */
+        7501AC710000000000000017 = {isa = PBXContainerItemProxy; containerPortal = 9F0000010000000000000701; proxyType = 1; remoteGlobalIDString = 7501AC71000000000000001E; remoteInfo = SessionActivityWidget; };
+/* End PBXContainerItemProxy section */
+/* Begin PBXTargetDependency section */
+        7501AC710000000000000018 = {isa = PBXTargetDependency; target = 7501AC71000000000000001E; targetProxy = 7501AC710000000000000017; };
+/* End PBXTargetDependency section */
+
 /* Begin PBXBuildFile section */
 		9F0000010000000000000001 /* SidePulseApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9F0000010000000000000101 /* SidePulseApp.swift */; };
 		9F0000010000000000000002 /* ContentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9F0000010000000000000102 /* ContentView.swift */; };
@@ -30,6 +41,13 @@
 		9F0000010000000000000040 /* Firmware.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9F0000010000000000000140 /* Firmware.swift */; };
 		9F0000010000000000000041 /* FirmwareUpdateModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9F0000010000000000000141 /* FirmwareUpdateModel.swift */; };
 		9F0000010000000000000042 /* FirmwareSettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9F0000010000000000000142 /* FirmwareSettingsView.swift */; };
+		7501AC71000000000000000B = {isa = PBXBuildFile; fileRef = 7501AC710000000000000001; };
+		7501AC71000000000000000C = {isa = PBXBuildFile; fileRef = 7501AC710000000000000002; };
+		7501AC71000000000000000D = {isa = PBXBuildFile; fileRef = 7501AC710000000000000003; };
+		7501AC71000000000000000E = {isa = PBXBuildFile; fileRef = 7501AC710000000000000001; };
+		7501AC71000000000000000F = {isa = PBXBuildFile; fileRef = 7501AC710000000000000002; };
+		7501AC710000000000000010 = {isa = PBXBuildFile; fileRef = 7501AC710000000000000004; };
+		7501AC710000000000000011 = {isa = PBXBuildFile; fileRef = 7501AC710000000000000005; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -59,6 +77,11 @@
 		9F0000010000000000000140 /* Firmware.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Firmware.swift; sourceTree = "<group>"; };
 		9F0000010000000000000141 /* FirmwareUpdateModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FirmwareUpdateModel.swift; sourceTree = "<group>"; };
 		9F0000010000000000000142 /* FirmwareSettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FirmwareSettingsView.swift; sourceTree = "<group>"; };
+		7501AC710000000000000001 /* SessionActivitySummary.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SessionActivitySummary.swift; sourceTree = "<group>"; };
+		7501AC710000000000000002 /* SessionActivityAttributes.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SessionActivityAttributes.swift; sourceTree = "<group>"; };
+		7501AC710000000000000003 /* SessionLiveActivityController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SessionLiveActivityController.swift; sourceTree = "<group>"; };
+		7501AC710000000000000004 /* SessionActivityWidget.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SessionActivityWidget.swift; sourceTree = "<group>"; };
+		7501AC710000000000000005 /* SessionActivityWidget.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = SessionActivityWidget.appex; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -69,6 +92,7 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+		7501AC710000000000000020 = {isa = PBXFrameworksBuildPhase; buildActionMask = 2147483647; files = (); runOnlyForDeploymentPostprocessing = 0; };
 /* End PBXFrameworksBuildPhase section */
 
 /* Begin PBXGroup section */
@@ -76,6 +100,7 @@
 			isa = PBXGroup;
 			children = (
 				9F0000010000000000000302 /* SidePulse */,
+				7501AC710000000000000015 /* SessionActivityWidget */,
 				9F0000010000000000000303 /* Products */,
 			);
 			sourceTree = "<group>";
@@ -90,6 +115,10 @@
 				9F0000010000000000000121 /* PatternLibraryViews.swift */,
 				9F0000010000000000000122 /* PatternLibraryIntent.swift */,
 				9F0000010000000000000101 /* SidePulseApp.swift */,
+				7501AC710000000000000001 /* SessionActivitySummary.swift */,
+				7501AC710000000000000002 /* SessionActivityAttributes.swift */,
+				7501AC710000000000000003 /* SessionLiveActivityController.swift */,
+
 				9F0000010000000000000102 /* ContentView.swift */,
 				9F0000010000000000000103 /* AppModel.swift */,
 				9F0000010000000000000140 /* Firmware.swift */,
@@ -116,10 +145,12 @@
 			isa = PBXGroup;
 			children = (
 				9F0000010000000000000111 /* SidePulse.app */,
+				7501AC710000000000000005 /* SessionActivityWidget.appex */,
 			);
 			name = Products;
 			sourceTree = "<group>";
 		};
+		7501AC710000000000000015 = {isa = PBXGroup; children = (7501AC710000000000000004, ); path = SessionActivityWidget; sourceTree = "<group>"; };
 /* End PBXGroup section */
 
 /* Begin PBXNativeTarget section */
@@ -130,16 +161,27 @@
 				9F0000010000000000000501 /* Sources */,
 				9F0000010000000000000201 /* Frameworks */,
 				9F0000010000000000000601 /* Resources */,
+				7501AC710000000000000016 /* Embed App Extensions */,
 			);
 			buildRules = (
 			);
 			dependencies = (
+				7501AC710000000000000018,
 			);
 			name = SidePulse;
 			productName = SidePulse;
 			productReference = 9F0000010000000000000111 /* SidePulse.app */;
 			productType = "com.apple.product-type.application";
 		};
+		7501AC71000000000000001E /* SessionActivityWidget */ = {
+            isa = PBXNativeTarget;
+            buildConfigurationList = 7501AC710000000000000021;
+            buildPhases = (7501AC71000000000000001F, 7501AC710000000000000020, );
+            buildRules = (); dependencies = ();
+            name = SessionActivityWidget; productName = SessionActivityWidget;
+            productReference = 7501AC710000000000000005;
+            productType = "com.apple.product-type.app-extension";
+        };
 /* End PBXNativeTarget section */
 
 /* Begin PBXProject section */
@@ -169,6 +211,7 @@
 			projectRoot = "";
 			targets = (
 				9F0000010000000000000401 /* SidePulse */,
+				7501AC71000000000000001E /* SessionActivityWidget */,
 			);
 		};
 /* End PBXProject section */
@@ -198,6 +241,10 @@
 				9F0000010000000000000001 /* SidePulseApp.swift in Sources */,
 				9F0000010000000000000002 /* ContentView.swift in Sources */,
 				9F0000010000000000000003 /* AppModel.swift in Sources */,
+				7501AC71000000000000000B,
+				7501AC71000000000000000C,
+				7501AC71000000000000000D,
+
 				9F0000010000000000000040 /* Firmware.swift in Sources */,
 				9F0000010000000000000041 /* FirmwareUpdateModel.swift in Sources */,
 				9F0000010000000000000042 /* FirmwareSettingsView.swift in Sources */,
@@ -214,6 +261,7 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+		7501AC71000000000000001F = {isa = PBXSourcesBuildPhase; buildActionMask = 2147483647; files = (7501AC71000000000000000E, 7501AC71000000000000000F, 7501AC710000000000000010, ); runOnlyForDeploymentPostprocessing = 0; };
 /* End PBXSourcesBuildPhase section */
 
 /* Begin XCBuildConfiguration section */
@@ -400,6 +448,18 @@
 			};
 			name = Release;
 		};
+		7501AC710000000000000022 = {isa = XCBuildConfiguration; buildSettings = {APPLICATION_EXTENSION_API_ONLY = YES; CODE_SIGN_STYLE = Automatic; DEVELOPMENT_TEAM = 5QJ7W2AQ8H;
+CURRENT_PROJECT_VERSION = 1; MARKETING_VERSION = 1.0; GENERATE_INFOPLIST_FILE = YES;
+INFOPLIST_FILE = SessionActivityWidget/Info.plist; INFOPLIST_KEY_CFBundleDisplayName = "SidePulse Sessions";
+PRODUCT_BUNDLE_IDENTIFIER = io.sidepulse.ios.sessions; PRODUCT_NAME = "$(TARGET_NAME)";
+SKIP_INSTALL = YES; SWIFT_VERSION = 5.0; TARGETED_DEVICE_FAMILY = 1;
+LD_RUNPATH_SEARCH_PATHS = ("$(inherited)", "@executable_path/Frameworks", "@executable_path/../../Frameworks", );}; name = Debug; };
+		7501AC710000000000000023 = {isa = XCBuildConfiguration; buildSettings = {APPLICATION_EXTENSION_API_ONLY = YES; CODE_SIGN_STYLE = Automatic; DEVELOPMENT_TEAM = 5QJ7W2AQ8H;
+CURRENT_PROJECT_VERSION = 1; MARKETING_VERSION = 1.0; GENERATE_INFOPLIST_FILE = YES;
+INFOPLIST_FILE = SessionActivityWidget/Info.plist; INFOPLIST_KEY_CFBundleDisplayName = "SidePulse Sessions";
+PRODUCT_BUNDLE_IDENTIFIER = io.sidepulse.ios.sessions; PRODUCT_NAME = "$(TARGET_NAME)";
+SKIP_INSTALL = YES; SWIFT_VERSION = 5.0; TARGETED_DEVICE_FAMILY = 1;
+LD_RUNPATH_SEARCH_PATHS = ("$(inherited)", "@executable_path/Frameworks", "@executable_path/../../Frameworks", );}; name = Release; };
 /* End XCBuildConfiguration section */
 
 /* Begin XCConfigurationList section */
@@ -421,6 +481,7 @@
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;
 		};
+		7501AC710000000000000021 = {isa = XCConfigurationList; buildConfigurations = (7501AC710000000000000022, 7501AC710000000000000023, ); defaultConfigurationIsVisible = 0; defaultConfigurationName = Release; };
 /* End XCConfigurationList section */
 	};
 	rootObject = 9F0000010000000000000701 /* Project object */;

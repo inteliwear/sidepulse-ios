@@ -61,6 +61,10 @@ final class AppDelegate: NSObject, UIApplicationDelegate, UNUserNotificationCent
         open url: URL,
         options: [UIApplication.OpenURLOptionsKey: Any] = [:]
     ) -> Bool {
+        if url.scheme?.lowercased() == "sidepulse", url.host?.lowercased() == "sessions" {
+            Task { @MainActor in AppModel.shared.showSessions = true }
+            return true
+        }
         if url.scheme?.lowercased() == "sidepulse",
            ["p", "pair"].contains(url.host?.lowercased() ?? "") {
             Task { @MainActor in

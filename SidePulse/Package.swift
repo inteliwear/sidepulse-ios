@@ -16,9 +16,9 @@ let package = Package(
                 "FolderPicker.swift", "FirmwareSettingsView.swift", "Info.plist",
                 "PatternLibraryIntent.swift", "PatternLibraryViews.swift", "PatternPreviewWeb",
                 "PatternThumbnailRenderer.swift", "PatternThumbnailSampler.mm", "PatternThumbnailSampler.h",
-                "SidePulse-Bridging-Header.h", "SidePulse.entitlements", "SidePulseApp.swift", "WriteLEDsIntent.swift"
+                "SessionActivityAttributes.swift", "SessionLiveActivityController.swift", "SidePulse-Bridging-Header.h", "SidePulse.entitlements", "SidePulseApp.swift", "WriteLEDsIntent.swift"
             ],
-            sources: ["ProgramStatus.swift", "PushTokenFormatter.swift", "PairingRegistrationGate.swift", "PatternLibrary.swift", "PushKeyRegistry.swift", "PushPayload.swift", "Firmware.swift", "FirmwareUpdateModel.swift", "DriveWriter.swift", "EventLog.swift"]
+            sources: ["SessionActivitySummary.swift", "ProgramStatus.swift", "PushTokenFormatter.swift", "PairingRegistrationGate.swift", "PatternLibrary.swift", "PushKeyRegistry.swift", "PushPayload.swift", "Firmware.swift", "FirmwareUpdateModel.swift", "DriveWriter.swift", "EventLog.swift"]
         ),
         .testTarget(
             name: "SidePulseTokenFormattingTests",
