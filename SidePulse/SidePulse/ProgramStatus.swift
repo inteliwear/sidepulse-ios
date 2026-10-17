@@ -134,6 +134,12 @@ struct ProgramAccounting: Codable {
         retainRecentSessions()
         return true
     }
+    @discardableResult mutating func acknowledgeSession(id: String, seq: Int64) -> Bool {
+        guard entries[id]?.seq == seq, entries[id]?.record?.status.state == "done" else { return false }
+        entries[id]!.record!.status.state = "idle"
+        entries[id]!.record!.status.msg = nil
+        return true // Keep source sequence, timestamp, and arrival order unchanged.
+    }
     @discardableResult mutating func retainSenders(_ allowed: Set<String>) -> Bool {
         let removed = entries.keys.filter { !allowed.contains(entries[$0]!.sender) }
         for key in removed { entries.removeValue(forKey: key) }
@@ -145,7 +151,7 @@ struct ProgramAccounting: Codable {
             guard let record = entry.record, record.status.state != "done" || now - record.updated_at <= 1_200_000 else { return nil }
             let title = record.status.title.flatMap { $0.isEmpty ? nil : $0 }
             return ProgramSession(id: entry.id, sender: entry.sender, scope: entry.scope,
-                                  title: title ?? "Session " + String(entry.scope.prefix(8)), status: record.status, updatedAt: record.updated_at)
+                                  title: title ?? "Session " + String(entry.scope.prefix(8)), status: record.status, updatedAt: record.updated_at, seq: entry.seq)
         }.sorted {
             if ProgramSession.priority($0.status.state) != ProgramSession.priority($1.status.state) { return ProgramSession.priority($0.status.state) < ProgramSession.priority($1.status.state) }
             return $0.updatedAt == $1.updatedAt ? $0.id < $1.id : $0.updatedAt > $1.updatedAt
@@ -184,6 +190,7 @@ struct ProgramSession: Identifiable, Equatable {
     let title: String
     let status: ProgramFields
     let updatedAt: Int64
+    let seq: Int64
 
     static func priority(_ state: String) -> Int {
         ["error": 0, "blocked": 1, "working": 2, "done": 3, "idle": 4][state] ?? 4

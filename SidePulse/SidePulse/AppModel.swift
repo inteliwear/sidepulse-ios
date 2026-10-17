@@ -244,6 +244,11 @@ final class AppModel: ObservableObject {
         saveProgramAccounting()
         renderProgramStatus()
     }
+    func acknowledgeSession(_ session: ProgramSession) {
+        guard programAccounting.acknowledgeSession(id: session.id, seq: session.seq) else { return }
+        saveProgramAccounting()
+        renderProgramStatus()
+    }
     private func renderProgramStatus(allowActivityStart: Bool = false) {
         if programAccounting.retainSenders(Set(pushKeys.records.filter { !$0.isExpired(at: Date()) }.map { $0.id.uuidString })) { saveProgramAccounting() }
         programSessions = programAccounting.sessions()

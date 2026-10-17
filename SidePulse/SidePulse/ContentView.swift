@@ -1237,7 +1237,7 @@ private struct ProgramSessionsView: View {
             Section {
                 Text("Latest reported status from your linked computers. Sessions update even when your Dot is disconnected.")
                     .font(.subheadline).foregroundStyle(.secondary)
-                Text("Swipe left to clear a session until its next update.")
+                Text("Swipe left to acknowledge Done as Idle, or clear a session until its next update.")
                     .font(.subheadline).foregroundStyle(.secondary)
             }
             if model.programSessions.isEmpty {
@@ -1249,6 +1249,13 @@ private struct ProgramSessionsView: View {
                             sender: model.activePushKeys.first { $0.id.uuidString == session.sender }?.name ?? "Linked computer")
                             .padding(.vertical, 6)
                             .swipeActions(edge: .trailing, allowsFullSwipe: true) {
+                                if session.status.state == "done" {
+                                    Button {
+                                        model.acknowledgeSession(session)
+                                    } label: {
+                                        Label("Acknowledge", systemImage: "checkmark.circle")
+                                    }.tint(.green)
+                                }
                                 Button(role: .destructive) {
                                     model.clearSession(id: session.id)
                                 } label: {

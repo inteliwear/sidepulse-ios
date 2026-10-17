@@ -114,6 +114,49 @@ extension ProgramStatusTests {
         return ["v": 1, "type": "program_status", "publisher": publisher, "scope": scope,
                 "seq": seq, "updated_at": 2_000_000, "status": status]
     }
+    func testAcknowledgedDoneStaysIdleAcrossRestartAndRejectsReplays() throws {
+        var store = ProgramAccounting()
+        var done = event("done", seq: 10)
+        done["status"] = ["state": "done", "title": "Example", "app": "codex", "msg": "Finished"]
+        XCTAssertTrue(try store.receiveMessage(done, sender: "a"))
+        let session = try XCTUnwrap(store.sessions(now: 2_000_000).first)
+        XCTAssertTrue(store.acknowledgeSession(id: session.id, seq: session.seq))
+        XCTAssertFalse(store.acknowledgeSession(id: session.id, seq: session.seq))
+        store = try JSONDecoder().decode(ProgramAccounting.self, from: JSONEncoder().encode(store))
+        let idle = try XCTUnwrap(store.sessions().first)
+        XCTAssertEqual(idle.statusLabel, "Idle")
+        XCTAssertEqual(idle.title, session.title)
+        XCTAssertEqual(idle.updatedAt, session.updatedAt)
+        XCTAssertEqual(idle.seq, session.seq)
+        XCTAssertNil(idle.status.msg)
+        XCTAssertEqual(SessionActivitySummary(sessions: store.sessions())?.done, 0)
+        XCTAssertEqual(SessionActivitySummary(sessions: store.sessions())?.state, "idle")
+        XCTAssertFalse(try store.receiveMessage(done, sender: "a"))
+        XCTAssertFalse(try store.receiveMessage(event("done", seq: 9), sender: "a"))
+        XCTAssertEqual(store.representative()?.state, "idle")
+        XCTAssertTrue(try store.receiveMessage(event("done", seq: 11), sender: "a"))
+        XCTAssertFalse(store.acknowledgeSession(id: session.id, seq: session.seq))
+        XCTAssertEqual(store.representative(now: 2_000_000)?.state, "done")
+        XCTAssertTrue(try store.receiveMessage(event("working", seq: 12), sender: "a"))
+        XCTAssertFalse(store.acknowledgeSession(id: session.id, seq: 12))
+        XCTAssertEqual(store.representative()?.state, "working")
+    }
+    func testAcknowledgementKeepsOtherSourcesPriorityAndDoesNotRefreshCapacity() throws {
+        var store = ProgramAccounting()
+        XCTAssertTrue(try store.receiveMessage(event("done"), sender: "a"))
+        let done = try XCTUnwrap(store.sessions(now: 2_000_000).first)
+        for (sender, publisher, scope) in [("b", "mac", "session"), ("a", "other", "session"), ("a", "mac", "other")] {
+            XCTAssertTrue(try store.receiveMessage(event("blocked", scope: scope, publisher: publisher), sender: sender))
+        }
+        XCTAssertTrue(store.acknowledgeSession(id: done.id, seq: done.seq))
+        XCTAssertEqual(store.sessions().count, 4)
+        XCTAssertEqual(store.representative()?.state, "blocked")
+        XCTAssertFalse(store.acknowledgeSession(id: "missing", seq: 1))
+        for i in 0..<61 { _ = try store.receiveMessage(event(scope: "extra-\(i)"), sender: "a") }
+        XCTAssertEqual(store.sessions().count, 64)
+        XCTAssertFalse(store.sessions().contains { $0.id == done.id })
+        XCTAssertFalse(try store.receiveMessage(event("done"), sender: "a"))
+    }
     func testLocalSessionClearPersistsUntilANewerMatchingUpdate() throws {
         var store = ProgramAccounting()
         XCTAssertTrue(try store.receiveMessage(event(seq: 10), sender: "a"))

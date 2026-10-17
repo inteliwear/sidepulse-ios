@@ -456,6 +456,11 @@ nonempty sessions are retained, with the oldest evicted first. Duplicate/stale
 updates do not refresh recency. Clear, local dismissal, and eviction preserve
 sequence guards across restarts. Done is hidden after 20 minutes; silence does
 not imply completion. Both apps can clear a row until a newer update arrives.
+For a Done session, swipe left and choose **Acknowledge** to keep it listed as
+Idle instead. This is local to the phone and survives restart; duplicate reports
+cannot undo it, and a newer report replaces Idle. Other sessions keep their
+priority, manual LED control stays in effect, and the combined Live Activity
+updates to match.
 
 Pairing advertises `status_protocol: 2`. Status messages travel in the existing
 bridge's `data` object or JSON string, with the authorized key outside `data`.
