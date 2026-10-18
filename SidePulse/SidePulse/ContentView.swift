@@ -899,7 +899,7 @@ private struct SettingsView: View {
             }
 
             Section("Sessions") {
-                NavigationLink("Session LED patterns") { SessionLEDSettingsView(model: model) }
+                NavigationLink("Session display") { SessionLEDSettingsView(model: model) }
                 Toggle("Session Live Activity", isOn: Binding(
                     get: { model.sessionLiveActivityEnabled }, set: model.setSessionLiveActivityEnabled))
                 Text("One combined summary on the Lock Screen and Dynamic Island. Open SidePulse to start it; it updates as session reports arrive.")
@@ -1322,6 +1322,9 @@ private struct SessionLEDSettingsView: View {
             }
             Section {
                 ForEach(SessionLEDSettings.conditions, id: \.0) { state, label in
+                    Toggle(label, isOn: Binding(
+                        get: { model.sessionLEDSettings.shows(state) },
+                        set: { model.setSessionStateVisible(state, visible: $0) }))
                     Picker(label, selection: Binding<String>(
                         get: { model.sessionLEDSettings.patterns[state]?.uuidString ?? "" },
                         set: { model.setSessionPattern(state, id: UUID(uuidString: $0)) })) {
@@ -1330,12 +1333,12 @@ private struct SessionLEDSettingsView: View {
                             Text("Default (pattern removed)").tag(id.uuidString)
                         }
                         ForEach(library.patterns) { pattern in Text(pattern.name).tag(pattern.id.uuidString) }
-                    }.pickerStyle(.navigationLink)
+                    }.pickerStyle(.navigationLink).disabled(!model.sessionLEDSettings.shows(state))
                 }
             } header: {
-                Text("Pattern for each condition")
+                Text("States and LED patterns")
             } footer: {
-                Text("Errors take priority, followed by sessions needing attention, working, done, and idle. Needs attention includes permission requests, questions, and sign-in. Defaults are used if a selected pattern is removed.")
+                Text("These switches control LEDs and Live Activity. Ask includes approval requests, questions, sign-in, and errors, just like on Mac. All sessions stay in the list. Disabled states are skipped. Idle or no enabled sessions turns LEDs off and ends Live Activity.")
             }
             Section {
                 NavigationLink("Pattern Library") {
@@ -1349,6 +1352,6 @@ private struct SessionLEDSettingsView: View {
             } footer: {
                 Text("Create or import patterns in your library, then choose them above. Selecting a pattern applies it to the current condition when a Dot is connected.")
             }
-        }.navigationTitle("Session LED patterns").navigationBarTitleDisplayMode(.inline)
+        }.navigationTitle("Session display").navigationBarTitleDisplayMode(.inline)
     }
 }

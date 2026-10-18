@@ -86,6 +86,10 @@ extension ProgramStatusTests {
         settings = try JSONDecoder().decode(SessionLEDSettings.self, from: JSONEncoder().encode(settings))
         XCTAssertFalse(settings.enabled)
         XCTAssertEqual(settings.program(for: "blocked", library: [pattern]), pattern.ledText)
+        XCTAssertEqual(settings.program(for: "error", library: [pattern]), pattern.ledText)
+        settings.disabledStates.insert("blocked")
+        XCTAssertEqual(settings.program(for: "error", library: [pattern]), "off\n")
+        settings.disabledStates.remove("blocked")
         XCTAssertEqual(settings.program(for: "working", library: [pattern]), ProgramAccounting.program(for: "working"))
         XCTAssertEqual(settings.program(for: "blocked", library: []), ProgramAccounting.program(for: "blocked"))
         pattern.source = "#00FF00 1s pulse\nrepeat"
@@ -105,6 +109,46 @@ extension ProgramStatusTests {
         presentation.manualWrite()
         XCTAssertFalse(presentation.needsWrite(previous))
     }
+    func testLEDMasterOffStopsSessionsWithoutTakingManualOwnership() throws {
+        var store = ProgramAccounting()
+        XCTAssertTrue(try store.receiveMessage(event(), sender: "mac"))
+        var settings = SessionLEDSettings()
+        var presentation = ProgramPresentation(enabled: true)
+        presentation.didWrite("working")
+        settings.enabled = false
+        XCTAssertNil(settings.ledState(in: store.sessions(now: 2_000_000)))
+        XCTAssertEqual(store.sessions(now: 2_000_000).count, 1)
+        XCTAssertTrue(presentation.needsWrite("off"))
+        presentation.didWrite("off")
+        XCTAssertFalse(presentation.needsWrite("off"))
+
+        presentation.manualWrite()
+        XCTAssertTrue(try store.receiveMessage(event("blocked", seq: 2), sender: "mac"))
+        presentation.statusChanged(ledsEnabled: settings.enabled)
+        presentation.deviceChanged()
+        XCTAssertFalse(presentation.needsWrite("off"))
+        XCTAssertEqual(store.sessions(now: 2_000_000).first?.status.state, "blocked")
+
+        settings.enabled = true
+        presentation.statusChanged(ledsEnabled: settings.enabled)
+        XCTAssertEqual(settings.ledState(in: store.sessions(now: 2_000_000)), "blocked")
+        XCTAssertTrue(presentation.needsWrite("blocked"))
+    }
+    func testDisplaySwitchesPreserveExistingPreferencesAndSelectedPatterns() throws {
+        let pattern = LibraryPattern(name: "Done", source: "#00FF00 1s")
+        let previous: [String: Any] = ["enabled": false, "patterns": ["done": pattern.id.uuidString]]
+        var settings = try JSONDecoder().decode(SessionLEDSettings.self, from: JSONSerialization.data(withJSONObject: previous))
+        XCTAssertFalse(settings.enabled)
+        XCTAssertTrue(SessionLEDSettings.conditions.allSatisfy { settings.shows($0.0) })
+        XCTAssertEqual(settings.program(for: "done", library: [pattern]), pattern.ledText)
+        settings.disabledStates = ["working", "done"]
+        settings = try JSONDecoder().decode(SessionLEDSettings.self, from: JSONEncoder().encode(settings))
+        XCTAssertEqual(settings.disabledStates, ["working", "done"])
+        XCTAssertEqual(settings.program(for: "done", library: [pattern]), "off\n")
+        XCTAssertEqual(settings.patterns["done"], pattern.id)
+        settings.disabledStates.remove("done")
+        XCTAssertEqual(settings.program(for: "done", library: [pattern]), pattern.ledText)
+    }
 }
 
 extension ProgramStatusTests {
@@ -113,6 +157,51 @@ extension ProgramStatusTests {
         if let id { status["id"] = id }
         return ["v": 1, "type": "program_status", "publisher": publisher, "scope": scope,
                 "seq": seq, "updated_at": 2_000_000, "status": status]
+    }
+    func testOnlyDoneAndInputArePresentedWithoutFilteringLedger() throws {
+        var store = ProgramAccounting()
+        for (sender, state) in [("a", "error"), ("b", "working"), ("c", "blocked"), ("d", "done")] {
+            _ = try store.receiveMessage(event(state), sender: sender)
+        }
+        let sessions = store.sessions(now: 2_000_000)
+        var settings = SessionLEDSettings()
+        settings.disabledStates = ["working"]
+        XCTAssertEqual(settings.ledState(in: sessions), "error")
+        let displayed = settings.displayedSessions(in: sessions)
+        XCTAssertEqual(displayed.map { $0.status.state }, ["error", "blocked", "done"])
+        let summary = try XCTUnwrap(SessionActivitySummary(sessions: displayed))
+        XCTAssertEqual(summary.total, 3); XCTAssertEqual(summary.working, 0)
+        XCTAssertEqual(summary.attention, 2); XCTAssertEqual(summary.done, 1)
+        settings.enabled = false // LED master switch does not hide the Live Activity.
+        XCTAssertEqual(settings.displayedSessions(in: sessions).count, 3)
+        XCTAssertNil(settings.ledState(in: sessions))
+        settings.enabled = true
+        settings.disabledStates.insert("blocked")
+        XCTAssertEqual(settings.ledState(in: sessions), "done")
+        settings.disabledStates.insert("done")
+        XCTAssertNil(settings.ledState(in: sessions))
+        XCTAssertNil(SessionActivitySummary(sessions: settings.displayedSessions(in: sessions)))
+        XCTAssertEqual(store.sessions(now: 2_000_000), sessions)
+        XCTAssertNil(settings.ledState(in: []))
+        XCTAssertFalse(settings.shows("idle"))
+        XCTAssertEqual(settings.program(for: "idle", library: []), "off\n")
+        XCTAssertNil(settings.ledState(in: sessions)) // Hidden sessions must not fall back to Idle.
+    }
+    func testAcknowledgedDoneAndNewReportsRespectDisplaySwitches() throws {
+        var store = ProgramAccounting()
+        var settings = SessionLEDSettings()
+        settings.disabledStates = ["working", "blocked"]
+        _ = try store.receiveMessage(event("done"), sender: "a")
+        let done = try XCTUnwrap(store.sessions(now: 2_000_000).first)
+        XCTAssertEqual(settings.ledState(in: [done]), "done")
+        XCTAssertTrue(store.acknowledgeSession(id: done.id, seq: done.seq))
+        XCTAssertEqual(store.sessions().first?.status.state, "idle")
+        XCTAssertNil(settings.ledState(in: store.sessions()))
+        XCTAssertNil(SessionActivitySummary(sessions: settings.displayedSessions(in: store.sessions())))
+        _ = try store.receiveMessage(event("working", seq: 2), sender: "a")
+        XCTAssertNil(settings.ledState(in: store.sessions()))
+        _ = try store.receiveMessage(event("done", seq: 3), sender: "a")
+        XCTAssertEqual(settings.ledState(in: store.sessions(now: 2_000_000)), "done")
     }
     func testAcknowledgedDoneStaysIdleAcrossRestartAndRejectsReplays() throws {
         var store = ProgramAccounting()

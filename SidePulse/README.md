@@ -434,13 +434,24 @@ The apps support three independent paths:
 3. **Shortcut actions:** a local shortcut plays a saved pattern or raw LED program,
    without changing session state.
 
-Settings → **Session LED patterns** provides **Use sessions for LEDs** and a
-library-pattern choice for Working, Needs attention, Error, Done, and Idle.
-Turning session LEDs off keeps tracking active and leaves direct writes available.
+Settings → **Session display** has just **Working**, **Done**, and **Ask**, each
+with an on/off switch and a library-pattern choice. Ask combines input/approval
+requests, questions, sign-in, and errors, matching Mac. Its pattern uses the
+existing Needs attention choice. Switches affect LEDs and the combined iOS Live Activity; all
+sessions keep their original states in the list. For only completion and input
+alerts, turn Working off and leave Done and Ask on. Disabled conditions are
+skipped; Idle or no enabled sessions turns LEDs off and ends Live Activity.
+Switches apply immediately and persist across restart; chosen patterns are kept
+when switched off. Existing Working, Done, and Needs attention patterns are preserved.
+Turning session LEDs off stops an active session animation with an Off command.
+Tracking continues. Manual remote and Shortcut output is preserved, and incoming
+session reports cannot take over LEDs while the master switch is off. Re-enabling
+session LEDs applies the current enabled state.
+The LED master switch does not turn off Live Activity.
 Deleting a chosen pattern falls back to that condition's built-in pattern.
 
 A successful direct write owns LED output until a newer accepted session update
-arrives. Duplicate/stale delivery and reconnecting do not resume session output.
+arrives while session LEDs are enabled. Duplicate/stale delivery and reconnecting do not resume session output.
 Changing session settings is an explicit request to apply those settings.
 Sessions continue to update independently of USB availability and manual output.
 
@@ -465,7 +476,7 @@ updates to match.
 Pairing advertises `status_protocol: 2`. Status messages travel in the existing
 bridge's `data` object or JSON string, with the authorized key outside `data`.
 Queue recovery uses the same receiver as live push. The bridge retains up to
-10 latest session values per routing key for at most 24 hours; missed/expired
+10 latest session values per routing key for at most 300 seconds; missed/expired
 clears cannot be reconstructed by the phone.
 
 The shared `program-updates.json` test fixture exercises individual states,

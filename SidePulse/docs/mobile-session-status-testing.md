@@ -9,11 +9,15 @@ installed desktop CLI. Connect and authorize a Dot for LED checks.
    The session appears without requiring hardware. Send Blocked, Error, Done,
    and Clear and verify the row's latest state or removal. Repeat from a second
    paired computer with the same session name; its row must remain independent.
-2. In Settings → Session LED patterns, choose a saved pattern for each condition.
+2. In Settings → Session display, choose saved patterns for Working, Done, and Ask.
+   Blocked and Error must both use Ask; Idle must turn LEDs off.
    Repeat the reports and check the connected Dot. Delete a chosen pattern and
    verify its built-in fallback on the next render/update. Settings survive restart.
-3. Turn **Use sessions for LEDs** off. Session rows still update, and the current
-   LED output stays unchanged. Direct remote and shortcut writes still work.
+3. While a session animation is playing, turn **Use sessions for LEDs** off.
+   LEDs turn off and session rows still update. Play a manual/Shortcut pattern,
+   then send a newer session report while the master switch is off: the manual
+   pattern must keep playing. Re-enable session LEDs and verify the current
+   enabled state is rendered.
 4. Send a direct manual LED command to the phone with `sidepulse push 'off' --to
    '<phone name>'`. The LED changes without adding/removing sessions. A duplicate
    status or reconnect must not override that successful write; a newer accepted
@@ -24,26 +28,43 @@ installed desktop CLI. Connect and authorize a Dot for LED checks.
    behavior and do not change tracked sessions.
 6. Clear a row (iOS swipe-left Clear; Android Clear session). Replaying its
    previous sequence must keep it hidden across restart; a newer report restores it.
-7. On iOS, enable **Session Live Activity**, open SidePulse, then lock the phone.
+7. Send Done, then acknowledge it (iOS swipe-left Acknowledge; Android
+   Acknowledge Done). The row stays listed as Idle, including after app restart.
+   Replay the original Done: it must stay Idle. Send a higher-sequence Done or
+   Working: the new state must appear. With no other active session, automatic
+   LEDs turn off for Idle. Repeat with another source still Working/Blocked and with
+   a successful manual LED write: acknowledgement must preserve their output
+   priority/ownership. Other receivers must not change.
+8. On iOS, enable **Session Live Activity**, open SidePulse, then lock the phone.
    Verify one combined card, counts, representative title/status/message, and
    Dynamic Island. Tap it to open Sessions. Disable session LEDs and repeat;
    the activity still updates. Turn Live Activity off or clear/revoke all sessions;
    the activity ends. Old reports show their last-reported timestamp rather than
-   implying a live connection. iOS controls background delivery.
-8. Submit an old `program_status_snapshot` envelope, even with a valid outer
+   implying a live connection. Acknowledging Done updates the combined count and
+   representative state without removing its session. iOS controls background delivery.
+9. In Settings → Session display, verify only Working, Done, and Ask appear.
+   Turn Working off and leave Done and Ask on. Send Error from one source and
+   Done from another: both stay listed; Error uses the Ask pattern. Turn Ask off:
+   Done controls LEDs and iOS Live Activity. Re-enable Ask while the app is open:
+   Error takes priority again. Switch all three off: LEDs turn off and Live
+   Activity ends without removing sessions. Restart and verify switches and
+   chosen patterns persist. Acknowledge Done with only Done enabled: the row
+   stays Idle, LEDs turn off, and Live Activity ends. Manual remote and Shortcut
+   writes still work. Restore the original settings.
+10. Submit an old `program_status_snapshot` envelope, even with a valid outer
    key and an LED field. It must neither alter sessions nor become a direct write.
 
-## Latest automated checks (2026-10-16)
+## Latest automated checks (2026-10-18)
 
-- Swift package: 84 tests pass, covering individual-update fixtures, validation,
+- Swift package: 90 tests pass, covering individual-update fixtures, validation,
   sender isolation, saved replay guards, 64-session eviction, manual ownership,
   configurable patterns, and combined-activity data.
-- Android: 89 unit tests, debug lint, and debug build pass. Three focused emulator
-  checks pass for session updates, paired-source isolation, and rejected snapshot
-  routing after the single-validation cleanup.
+- Android: 95 unit tests, debug lint, and debug build pass. Three focused emulator
+  checks pass for editable settings, LED master-off behavior, and paired-source
+  isolation. Manual LED ownership while disabled is covered by both unit suites.
 - iOS simulator app and widget build pass. Each accepted update now refreshes
   the session list and Live Activity once; LEDs use that same session list.
-- Desktop: 914 tests and 600 subtests pass, including six isolated local bridge
+- Desktop: 932 tests and 600 subtests pass, including isolated local bridge
   checks. Distinct active source/session rows are counted separately. Mac sleep
   control, history sampling, and output holds run in the daemon without the tray;
   those local controls do not change the bridge/mobile status format.

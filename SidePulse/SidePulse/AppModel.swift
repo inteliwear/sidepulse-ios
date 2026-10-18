@@ -209,7 +209,7 @@ final class AppModel: ObservableObject {
         refreshSessionLiveActivity(allowStart: enabled)
     }
     func refreshSessionLiveActivity(allowStart: Bool = false) {
-        SessionLiveActivityController.shared.refresh(SessionActivitySummary(sessions: programSessions),
+        SessionLiveActivityController.shared.refresh(SessionActivitySummary(sessions: sessionLEDSettings.displayedSessions(in: programSessions)),
             enabled: sessionLiveActivityEnabled, allowStart: allowStart)
     }
     func setSessionLEDsEnabled(_ enabled: Bool) {
@@ -221,7 +221,13 @@ final class AppModel: ObservableObject {
         sessionLEDSettings.patterns[state] = id
         saveSessionLEDSettings()
     }
-    private func saveSessionLEDSettings() {
+    func setSessionStateVisible(_ state: String, visible: Bool) {
+        guard SessionLEDSettings.conditions.contains(where: { $0.0 == state }) else { return }
+        if visible { sessionLEDSettings.disabledStates.remove(state) }
+        else { sessionLEDSettings.disabledStates.insert(state) }
+        saveSessionLEDSettings(allowActivityStart: true)
+    }
+    private func saveSessionLEDSettings(allowActivityStart: Bool = false) {
         if let data = try? JSONEncoder().encode(sessionLEDSettings) {
             UserDefaults.standard.set(data, forKey: "sessionLEDSettings")
         }
@@ -229,7 +235,7 @@ final class AppModel: ObservableObject {
             programPresentation.statusChanged()
             saveProgramAccounting()
         }
-        renderProgramStatus()
+        renderProgramStatus(allowActivityStart: allowActivityStart)
     }
 
     private var programAccounting = (UserDefaults.standard.data(forKey: "programAccounting").flatMap { try? JSONDecoder().decode(ProgramAccounting.self, from: $0) }) ?? ProgramAccounting()
@@ -253,12 +259,12 @@ final class AppModel: ObservableObject {
         if programAccounting.retainSenders(Set(pushKeys.records.filter { !$0.isExpired(at: Date()) }.map { $0.id.uuidString })) { saveProgramAccounting() }
         programSessions = programAccounting.sessions()
         refreshSessionLiveActivity(allowStart: allowActivityStart)
-        guard programPresentation.enabled && sessionLEDSettings.enabled else { return }
-        let status = programSessions.first?.status
-        let state = status?.state ?? "idle"
-        lastMessage = status?.msg ?? status?.title ?? "Program status: \(state)"
-        let program = sessionLEDSettings.program(for: state, library: PatternLibraryStore.shared.patterns)
-        let outputKey = state + "\u{0}" + program
+        guard programPresentation.enabled else { return }
+        let status = sessionLEDSettings.enabled ? sessionLEDSettings.displayedSessions(in: programSessions).first?.status : nil
+        let state = sessionLEDSettings.ledState(in: programSessions)
+        lastMessage = status?.msg ?? status?.title ?? state.map { "Program status: \($0)" } ?? "Session LEDs off"
+        let program = state.map { sessionLEDSettings.program(for: $0, library: PatternLibraryStore.shared.patterns) } ?? "off\n"
+        let outputKey = (state ?? "off") + "\u{0}" + program
         guard programPresentation.needsWrite(outputKey) else { return }
         do {
             _ = try DriveWriter.shared.write(program)
@@ -273,7 +279,7 @@ final class AppModel: ObservableObject {
             let accepted = try programAccounting.receiveMessage(raw, sender: sender.id.uuidString)
             if accepted {
                 _ = pushKeys.receive(key: key, messageID: "status:\(raw["publisher"] ?? ""):\(raw["scope"] ?? ""):\(raw["seq"] ?? "")")
-                programPresentation.statusChanged()
+                programPresentation.statusChanged(ledsEnabled: sessionLEDSettings.enabled)
                 saveProgramAccounting()
             }
             renderProgramStatus(allowActivityStart: accepted)

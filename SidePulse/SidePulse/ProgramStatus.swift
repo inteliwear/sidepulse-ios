@@ -174,7 +174,10 @@ struct ProgramPresentation {
     private(set) var enabled: Bool
     private var lastWrittenState: String?
     init(enabled: Bool = false) { self.enabled = enabled }
-    mutating func statusChanged() { if !enabled { lastWrittenState = nil }; enabled = true }
+    mutating func statusChanged(ledsEnabled: Bool = true) {
+        guard ledsEnabled else { return }
+        if !enabled { lastWrittenState = nil }; enabled = true
+    }
     mutating func manualWrite() { enabled = false; lastWrittenState = nil }
     mutating func deviceChanged() { lastWrittenState = nil }
     func needsWrite(_ state: String) -> Bool { enabled && lastWrittenState != state }
@@ -221,21 +224,48 @@ struct ProgramSession: Identifiable, Equatable {
     }
 }
 
-/// User-selected library patterns affect LED output only, never session accounting.
+/// Display preferences never change session accounting.
 struct SessionLEDSettings: Codable, Equatable {
-    static let conditions = [("working", "Working"), ("blocked", "Needs attention"),
-                             ("error", "Error"), ("done", "Done"), ("idle", "Idle")]
+    static let conditions = [("working", "Working"), ("done", "Done"), ("blocked", "Ask")]
     var enabled = true
     var patterns: [String: UUID] = [:]
+    var disabledStates: Set<String> = []
+
+    init() {}
+    private enum CodingKeys: String, CodingKey { case enabled, patterns, disabledStates }
+    init(from decoder: Decoder) throws {
+        let values = try decoder.container(keyedBy: CodingKeys.self)
+        enabled = try values.decodeIfPresent(Bool.self, forKey: .enabled) ?? true
+        patterns = try values.decodeIfPresent([String: UUID].self, forKey: .patterns) ?? [:]
+        disabledStates = try values.decodeIfPresent(Set<String>.self, forKey: .disabledStates) ?? []
+        disabledStates.formIntersection(Self.conditions.map { $0.0 })
+    }
+    private func condition(for state: String) -> String? {
+        switch state {
+        case "working", "done": return state
+        case "blocked", "error": return "blocked"
+        default: return nil
+        }
+    }
+    func shows(_ state: String) -> Bool {
+        condition(for: state).map { !disabledStates.contains($0) } ?? false
+    }
+    func displayedSessions(in sessions: [ProgramSession]) -> [ProgramSession] {
+        sessions.filter { shows($0.status.state) }
+    }
+    func ledState(in sessions: [ProgramSession]) -> String? {
+        enabled ? displayedSessions(in: sessions).first?.status.state : nil
+    }
 
     func program(for state: String, library: [LibraryPattern]) -> String {
-        if let id = patterns[state], let pattern = library.first(where: { $0.id == id }) {
+        guard shows(state), let condition = condition(for: state) else { return "off\n" }
+        if let id = patterns[condition], let pattern = library.first(where: { $0.id == id }) {
             return pattern.ledText
         }
-        return ProgramAccounting.program(for: state)
+        return ProgramAccounting.program(for: condition)
     }
     func patternName(for state: String, library: [LibraryPattern]) -> String {
-        guard let id = patterns[state] else { return "Default" }
+        guard let condition = condition(for: state), let id = patterns[condition] else { return "Default" }
         return library.first(where: { $0.id == id })?.name ?? "Default (pattern removed)"
     }
 }
