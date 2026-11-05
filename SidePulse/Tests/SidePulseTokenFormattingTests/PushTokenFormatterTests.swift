@@ -26,8 +26,8 @@ final class PushTokenFormatterTests: XCTestCase {
     func testDevelopmentRecoveryEndpointPreservesPrefix() throws {
         let server = try XCTUnwrap(URL(string: "https://bridge.example"))
         XCTAssertEqual(
-            PushRecoveryEndpoint.queued(server: server, token: "dev_000aafff").path,
-            "/api/leds/apns_dev_000aafff/queued"
+            PushRecoveryEndpoint.queued(server: server, token: "dev_000aafff", key: "paired_key").path,
+            "/api/leds/apns_dev_000aafff_paired_key/queued"
         )
     }
 }

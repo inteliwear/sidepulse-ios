@@ -58,6 +58,22 @@ struct ContentView: View {
                         FolderSetupPanel { showFolderPicker() }
                     }
 
+                    VStack(alignment: .leading, spacing: 6) {
+                        Text("Last pattern").font(.headline)
+                        Text(model.lastPattern.isEmpty ? "Not recorded yet" : model.lastPattern)
+                            .font(.subheadline).textSelection(.enabled)
+                        if let sentAt = model.lastPatternAt {
+                            HStack(spacing: 4) {
+                                Text("Sent to Dot")
+                                Text(sentAt, style: .date)
+                                Text(sentAt, style: .time)
+                            }.font(.caption).foregroundStyle(.secondary)
+                        }
+                    }
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(16)
+                    .background(PatternStyle.card, in: RoundedRectangle(cornerRadius: 16))
+
                     VStack(spacing: 2) {
                         SidePulseShortcutsBadge()
                             .frame(maxWidth: .infinity, minHeight: 76)
@@ -186,7 +202,7 @@ struct ContentView: View {
         }
         .onOpenURL { url in
             if url.scheme?.lowercased() == "sidepulse", url.host?.lowercased() == "sessions" {
-                isShowingSettings = false; activeSheet = nil; model.showSessions = true
+                isShowingSettings = false; activeSheet = nil; model.openSessions(url)
                 return
             }
             if PatternShareLink.recognizes(url) {
@@ -291,7 +307,7 @@ struct ContentView: View {
 
     private func write(_ pattern: LEDPattern) {
         let pushBase = ReceivedPush(
-            source: "Pattern Library",
+            source: pattern.name == "off" ? "Manual" : "Pattern Library",
             title: pattern.displayName,
             body: pattern.detail,
             patternName: pattern.name,
@@ -1200,6 +1216,7 @@ private struct ProgramSessionsPanel: View {
         VStack(alignment: .leading, spacing: 14) {
             NavigationLink {
                 ProgramSessionsView(model: model).toolbar(.visible, for: .navigationBar)
+                    .onAppear { model.selectedSession = nil }
             } label: {
                 HStack {
                     if typeSize.isAccessibilitySize { Text("Sessions").font(.headline) }
@@ -1237,25 +1254,25 @@ private struct ProgramSessionsView: View {
             Section {
                 Text("Latest reported status from your linked computers. Sessions update even when your Dot is disconnected.")
                     .font(.subheadline).foregroundStyle(.secondary)
-                Text("Swipe left to acknowledge Done as Idle, or clear a session until its next update.")
+                Text("Swipe left to clear a session until its next update.")
                     .font(.subheadline).foregroundStyle(.secondary)
             }
-            if model.programSessions.isEmpty {
+            if model.selectedSession != nil {
+                Section {
+                    Button("Show all sessions") { model.selectedSession = nil }
+                    if model.linkedSessions.isEmpty { Text("This session has not arrived on this phone, or has been cleared.") }
+                }
+            }
+            if model.linkedSessions.isEmpty && model.selectedSession == nil {
                 ContentUnavailableView("No sessions yet", systemImage: "terminal", description: Text("Link your computer and start an agent session to see its status here."))
-            } else {
-                Section("\(model.programSessions.count) sessions") {
-                    ForEach(model.programSessions) { session in
+            } else if !model.linkedSessions.isEmpty {
+                Section("\(model.linkedSessions.count) sessions") {
+                    ForEach(model.linkedSessions) { session in
                         ProgramSessionRow(session: session,
                             sender: model.activePushKeys.first { $0.id.uuidString == session.sender }?.name ?? "Linked computer")
                             .padding(.vertical, 6)
+                            .contextMenu { ShareLink(item: session.link.url) { Label("Share session link", systemImage: "link") } }
                             .swipeActions(edge: .trailing, allowsFullSwipe: true) {
-                                if session.status.state == "done" {
-                                    Button {
-                                        model.acknowledgeSession(session)
-                                    } label: {
-                                        Label("Acknowledge", systemImage: "checkmark.circle")
-                                    }.tint(.green)
-                                }
                                 Button(role: .destructive) {
                                     model.clearSession(id: session.id)
                                 } label: {
@@ -1345,12 +1362,12 @@ private struct SessionLEDSettingsView: View {
                     PatternLibraryView(store: library, play: { pattern in
                         do {
                             _ = try DriveWriter.shared.write(pattern.ledText)
-                            model.recordWriteSuccess("Played \(pattern.name)")
+                            model.recordWriteSuccess("Played \(pattern.name)", source: "Pattern Library", pattern: pattern.name)
                         } catch { model.recordError(error) }
                     })
                 }
             } footer: {
-                Text("Create or import patterns in your library, then choose them above. Selecting a pattern applies it to the current condition when a Dot is connected.")
+                Text("Create or import patterns in your library, then choose them above. Choosing a pattern or turning a state on previews its pattern on a connected Dot, even without an active session.")
             }
         }.navigationTitle("Session display").navigationBarTitleDisplayMode(.inline)
     }

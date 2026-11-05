@@ -6,6 +6,7 @@
 
 import Foundation
 import Darwin
+import FileProvider
 
 enum DriveWriterError: LocalizedError {
     case noFolderSelected
@@ -15,6 +16,7 @@ enum DriveWriterError: LocalizedError {
     case tooManyLines(Int)
     case missingText
     case firmwareBusy
+    case deviceUnavailable
 
     var errorDescription: String? {
         switch self {
@@ -32,6 +34,8 @@ enum DriveWriterError: LocalizedError {
             return "No LED text was provided."
         case .firmwareBusy:
             return "Firmware is being applied. Keep the device connected and wait at least 10 seconds before playing patterns."
+        case .deviceUnavailable:
+            return "SidePulse Dot is unavailable. Plug it in, then try again. If needed, select its folder again in SidePulse. Further connection warnings stay quiet until a write succeeds."
         }
     }
 }
@@ -44,6 +48,7 @@ final class DriveWriter {
     private let maxLEDBytes = 512
     private let maxLEDLines = 20
     private let ioLock = NSLock()
+    private let shortcutAvailability = ShortcutDriveAvailability(defaults: .standard)
     private var firmwareQuietUntil = UserDefaults.standard.object(forKey: "firmwareQuietUntil") as? Date ?? .distantPast
 
     private init() {}
@@ -91,6 +96,20 @@ final class DriveWriter {
     func write(_ text: String) throws -> URL {
         ioLock.lock()
         defer { ioLock.unlock() }
+        let target = try writeLEDProgram(text)
+        shortcutAvailability.didWrite()
+        return target
+    }
+
+    /// A repeated unavailable-drive failure is a skipped action, never a write receipt.
+    /// Persist the warning across Shortcuts launches and share it across all LED actions.
+    func writeFromShortcut(_ text: String) throws -> URL? {
+        ioLock.lock()
+        defer { ioLock.unlock() }
+        return try shortcutAvailability.perform { try writeLEDProgram(text) }
+    }
+
+    private func writeLEDProgram(_ text: String) throws -> URL {
         guard Date() >= firmwareQuietUntil else { throw DriveWriterError.firmwareBusy }
         let program = normalizeLEDText(text)
         let trimmed = program.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -242,5 +261,61 @@ final class DriveWriter {
         }
 
         return output
+    }
+}
+
+/// Accessed under DriveWriter's I/O lock. Only a successful LED write resets the warning.
+struct ShortcutDriveAvailability {
+    private let defaults: UserDefaults
+    private let warningKey = "shortcutDriveUnavailableWarningShown"
+
+    init(defaults: UserDefaults) {
+        self.defaults = defaults
+    }
+
+    func didWrite() {
+        defaults.removeObject(forKey: warningKey)
+    }
+
+    func perform(_ write: () throws -> URL) throws -> URL? {
+        do {
+            let target = try write()
+            didWrite()
+            return target
+        } catch {
+            guard Self.isUnavailable(error) else { throw error }
+            guard !defaults.bool(forKey: warningKey) else { return nil }
+            defaults.set(true, forKey: warningKey)
+            // Preserve actionable setup errors, but replace low-level provider errors.
+            if error is DriveWriterError { throw error }
+            throw DriveWriterError.deviceUnavailable
+        }
+    }
+
+    private static func isUnavailable(_ error: Error, depth: Int = 0) -> Bool {
+        if let error = error as? DriveWriterError {
+            switch error {
+            case .noFolderSelected, .bookmarkStale, .accessDenied, .deviceUnavailable:
+                return true
+            default:
+                return false
+            }
+        }
+        let error = error as NSError
+        switch error.domain {
+        case NSFileProviderErrorDomain:
+            if [NSFileProviderError.Code.providerNotFound.rawValue,
+                NSFileProviderError.Code.noSuchItem.rawValue].contains(error.code) { return true }
+        case NSCocoaErrorDomain:
+            if [NSFileNoSuchFileError, NSFileReadNoSuchFileError].contains(error.code) { return true }
+        case NSPOSIXErrorDomain:
+            if [ENOENT, ENODEV, ENXIO, ESTALE].contains(Int32(error.code)) { return true }
+        default:
+            break
+        }
+        if depth < 8, let underlying = error.userInfo[NSUnderlyingErrorKey] as? Error {
+            return isUnavailable(underlying, depth: depth + 1)
+        }
+        return false
     }
 }

@@ -198,6 +198,19 @@ final class AppModel: ObservableObject {
     @Published var lastRecoveryStatus = "Not checked"
 
     @Published var showSessions = false
+    @Published var selectedSession: SessionLink?
+    @discardableResult func openSessions(_ url: URL) -> Bool {
+        if URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems?.isEmpty == false {
+            guard let selection = SessionLink.parse(url) else { lastMessage = "Invalid session link"; return false }
+            selectedSession = selection
+        } else { selectedSession = nil }
+        showSessions = true
+        return true
+    }
+    var linkedSessions: [ProgramSession] {
+        guard let selectedSession else { return programSessions }
+        return programSessions.filter { selectedSession.matches($0) }
+    }
     @Published private(set) var programSessions: [ProgramSession] = []
     @Published private(set) var sessionLEDSettings = UserDefaults.standard.data(forKey: "sessionLEDSettings")
         .flatMap { try? JSONDecoder().decode(SessionLEDSettings.self, from: $0) } ?? SessionLEDSettings()
@@ -209,29 +222,51 @@ final class AppModel: ObservableObject {
         refreshSessionLiveActivity(allowStart: enabled)
     }
     func refreshSessionLiveActivity(allowStart: Bool = false) {
+        if programAccounting.retainSenders(Set(pushKeys.records.filter { !$0.isExpired(at: Date()) }.map { $0.id.uuidString })) { saveProgramAccounting() }
+        programSessions = programAccounting.sessions()
         SessionLiveActivityController.shared.refresh(SessionActivitySummary(sessions: sessionLEDSettings.displayedSessions(in: programSessions)),
             enabled: sessionLiveActivityEnabled, allowStart: allowStart)
     }
     func setSessionLEDsEnabled(_ enabled: Bool) {
+        let wasEnabled = sessionLEDSettings.enabled
         sessionLEDSettings.enabled = enabled
+        if wasEnabled && !enabled {
+            programPresentation.manualWrite()
+            if (try? DriveWriter.shared.write("off\n")) != nil {
+                recordPatternWrite(source: "Session LEDs disabled", pattern: "Off")
+            }
+        }
         saveSessionLEDSettings()
     }
     func setSessionPattern(_ state: String, id: UUID?) {
         guard SessionLEDSettings.conditions.contains(where: { $0.0 == state }) else { return }
         sessionLEDSettings.patterns[state] = id
-        saveSessionLEDSettings()
+        saveSessionLEDSettings(previewState: state)
     }
     func setSessionStateVisible(_ state: String, visible: Bool) {
         guard SessionLEDSettings.conditions.contains(where: { $0.0 == state }) else { return }
         if visible { sessionLEDSettings.disabledStates.remove(state) }
         else { sessionLEDSettings.disabledStates.insert(state) }
-        saveSessionLEDSettings(allowActivityStart: true)
+        saveSessionLEDSettings(allowActivityStart: true, previewState: visible ? state : nil)
     }
-    private func saveSessionLEDSettings(allowActivityStart: Bool = false) {
+    private func saveSessionLEDSettings(allowActivityStart: Bool = false, previewState: String? = nil) {
         if let data = try? JSONEncoder().encode(sessionLEDSettings) {
             UserDefaults.standard.set(data, forKey: "sessionLEDSettings")
         }
-        if sessionLEDSettings.enabled && !programSessions.isEmpty {
+        if let state = previewState {
+            refreshSessionLiveActivity(allowStart: allowActivityStart)
+            // A settings preview is one manual write, independent of live sessions.
+            programPresentation.manualWrite()
+            guard DriveWriter.shared.isFolderAvailable else { return }
+            do {
+                _ = try DriveWriter.shared.write(sessionLEDSettings.program(for: state, library: PatternLibraryStore.shared.patterns))
+                let label = SessionLEDSettings.conditions.first { $0.0 == state }?.1 ?? state
+                recordWriteSuccess("Previewed \(label)", source: "Settings preview · \(label)",
+                    pattern: sessionLEDSettings.patternName(for: state, library: PatternLibraryStore.shared.patterns))
+            } catch { recordError(error) }
+            return
+        }
+        if sessionLEDSettings.enabled {
             programPresentation.statusChanged()
             saveProgramAccounting()
         }
@@ -239,37 +274,34 @@ final class AppModel: ObservableObject {
     }
 
     private var programAccounting = (UserDefaults.standard.data(forKey: "programAccounting").flatMap { try? JSONDecoder().decode(ProgramAccounting.self, from: $0) }) ?? ProgramAccounting()
-    private var programPresentation = ProgramPresentation(enabled: UserDefaults.standard.bool(forKey: "programPresentationEnabled"))
+    private var programPresentation = ProgramPresentation()
 
     private func saveProgramAccounting() {
         if let data = try? JSONEncoder().encode(programAccounting) { UserDefaults.standard.set(data, forKey: "programAccounting") }
-        UserDefaults.standard.set(programPresentation.enabled, forKey: "programPresentationEnabled")
     }
     func clearSession(id: String) {
         guard programAccounting.clearSession(id: id) else { return }
-        saveProgramAccounting()
-        renderProgramStatus()
-    }
-    func acknowledgeSession(_ session: ProgramSession) {
-        guard programAccounting.acknowledgeSession(id: session.id, seq: session.seq) else { return }
+        if programPresentation.sessionOutput { programPresentation.statusChanged(ledsEnabled: sessionLEDSettings.enabled) }
         saveProgramAccounting()
         renderProgramStatus()
     }
     private func renderProgramStatus(allowActivityStart: Bool = false) {
-        if programAccounting.retainSenders(Set(pushKeys.records.filter { !$0.isExpired(at: Date()) }.map { $0.id.uuidString })) { saveProgramAccounting() }
-        programSessions = programAccounting.sessions()
         refreshSessionLiveActivity(allowStart: allowActivityStart)
         guard programPresentation.enabled else { return }
-        let status = sessionLEDSettings.enabled ? sessionLEDSettings.displayedSessions(in: programSessions).first?.status : nil
+        let session = sessionLEDSettings.enabled ? sessionLEDSettings.displayedSessions(in: programSessions).first : nil
+        let status = session?.status
         let state = sessionLEDSettings.ledState(in: programSessions)
-        lastMessage = status?.msg ?? status?.title ?? state.map { "Program status: \($0)" } ?? "Session LEDs off"
         let program = state.map { sessionLEDSettings.program(for: $0, library: PatternLibraryStore.shared.patterns) } ?? "off\n"
         let outputKey = (state ?? "off") + "\u{0}" + program
         guard programPresentation.needsWrite(outputKey) else { return }
+        programPresentation.didWrite(outputKey) // Consume before I/O, including a missing/unplugged device.
+        lastMessage = status?.msg ?? status?.title ?? state.map { "Program status: \($0)" } ?? "Session LEDs off"
         do {
             _ = try DriveWriter.shared.write(program)
-            programPresentation.didWrite(outputKey)
-        } catch { /* Retain state and retry after device reconnect/recovery. */ }
+            recordPatternWrite(source: session.map { "Session · \($0.appName) · \($0.title) · \($0.statusLabel)" } ?? "Sessions",
+                pattern: state.map { sessionLEDSettings.patternName(for: $0, library: PatternLibraryStore.shared.patterns) } ?? "Off")
+            programPresentation.displayedSession(state != nil)
+        } catch { /* A failed automatic write stays quiet; the next enabled update can try again. */ }
     }
     private func receiveProgramStatus(_ raw: [String: Any], key: String?) -> Bool {
         guard let key, pushKeys.accepts(key),
@@ -279,7 +311,8 @@ final class AppModel: ObservableObject {
             let accepted = try programAccounting.receiveMessage(raw, sender: sender.id.uuidString)
             if accepted {
                 _ = pushKeys.receive(key: key, messageID: "status:\(raw["publisher"] ?? ""):\(raw["scope"] ?? ""):\(raw["seq"] ?? "")")
-                programPresentation.statusChanged(ledsEnabled: sessionLEDSettings.enabled)
+                programPresentation.statusChanged(ledsEnabled: sessionLEDSettings.enabled,
+                    stateEnabled: sessionLEDSettings.shows((raw["status"] as? [String: Any])?["state"] as? String ?? ""))
                 saveProgramAccounting()
             }
             renderProgramStatus(allowActivityStart: accepted)
@@ -348,6 +381,8 @@ final class AppModel: ObservableObject {
     }
 
     @Published var lastMessage: String = "Ready"
+    @Published private(set) var lastPattern = UserDefaults.standard.string(forKey: "lastPattern") ?? ""
+    @Published private(set) var lastPatternAt = UserDefaults.standard.object(forKey: "lastPatternAt") as? Date
     @Published var eventLog: [String] = []
     @Published var receivedPushes: [ReceivedPush] {
         didSet { persistReceivedPushes() }
@@ -656,13 +691,23 @@ final class AppModel: ObservableObject {
     }
 
     func refreshFolderStatus() {
+        lastPattern = UserDefaults.standard.string(forKey: "lastPattern") ?? ""
+        lastPatternAt = UserDefaults.standard.object(forKey: "lastPatternAt") as? Date
         let wasConnected = isDotConnected
         hasFolderAccess = DriveWriter.shared.hasSavedFolder
         isDotConnected = DriveWriter.shared.isFolderAvailable
         if isDotConnected && !wasConnected { programPresentation.deviceChanged(); renderProgramStatus() }
     }
 
-    func recordWriteSuccess(_ message: String) {
+    private func recordPatternWrite(source: String, pattern: String) {
+        lastPattern = "\(source) · \(pattern)"
+        lastPatternAt = Date()
+        UserDefaults.standard.set(lastPattern, forKey: "lastPattern")
+        UserDefaults.standard.set(lastPatternAt, forKey: "lastPatternAt")
+    }
+
+    func recordWriteSuccess(_ message: String, source: String = "Manual", pattern: String = "Custom LED program") {
+        recordPatternWrite(source: source, pattern: pattern)
         programPresentation.manualWrite()
         saveProgramAccounting()
         EventLog.append(message)
@@ -680,7 +725,13 @@ final class AppModel: ObservableObject {
     }
 
     func recordReceivedPush(_ push: ReceivedPush) {
-        if push.writeStatus == .wrote { programPresentation.manualWrite(); saveProgramAccounting() }
+        if push.writeStatus == .wrote {
+            let remote = Self.isRemotePushSource(push.source) || push.source == "Shortcut server update"
+            let sender = pushKeys.records.first { $0.id == push.senderKeyID }?.name
+            let source = remote ? "Remote push" + (sender.map { " · \($0)" } ?? "") : push.source
+            recordPatternWrite(source: source, pattern: remote ? (push.patternName ?? "Custom LED program") : push.title)
+            programPresentation.manualWrite(); saveProgramAccounting()
+        }
         var next = [push]
         next.append(contentsOf: receivedPushes)
         if next.count > 50 {
@@ -791,11 +842,35 @@ final class AppModel: ObservableObject {
         return status != .failed
     }
 
+    nonisolated static func hasIndependentAlert(_ payload: [AnyHashable: Any]) -> Bool {
+        if ["title", "text", "alert", "body"].contains(where: { !(payload[$0] as? String ?? "").isEmpty }) { return true }
+        if let notification = payload["notification"] as? [String: Any], !notification.isEmpty { return true }
+        if let aps = payload["aps"] as? [String: Any], let alert = aps["alert"] {
+            if let text = alert as? String { return !text.isEmpty }
+            if let fields = alert as? [String: Any] { return !fields.isEmpty }
+        }
+        return false
+    }
+
     func processPushAndCleanUp(_ userInfo: [AnyHashable: Any], source: String) async -> Bool {
         if ProgramUpdate.isStatusPayload(userInfo) {
             guard let update = ProgramUpdate.pushedUpdate(userInfo) else { return false }
             // Only the outer key is bound by the bridge; nested data cannot authorize itself.
-            return receiveProgramStatus(update, key: userInfo["shared_key"] as? String)
+            let handled = receiveProgramStatus(update, key: userInfo["shared_key"] as? String)
+            if handled && !Self.hasIndependentAlert(userInfo) {
+                let center = UNUserNotificationCenter.current()
+                let notifications = await center.deliveredNotifications()
+                let identifiers = notifications.compactMap { notification -> String? in
+                    let delivered = notification.request.content.userInfo
+                    guard !Self.hasIndependentAlert(delivered),
+                          delivered["shared_key"] as? String == userInfo["shared_key"] as? String,
+                          let value = ProgramUpdate.pushedUpdate(delivered),
+                          NSDictionary(dictionary: value).isEqual(to: update) else { return nil }
+                    return notification.request.identifier
+                }
+                center.removeDeliveredNotifications(withIdentifiers: identifiers)
+            }
+            return handled
         }
         let previousID = receivedPushes.first?.id
         let didHandle = processPush(userInfo, source: source)
@@ -849,13 +924,12 @@ final class AppModel: ObservableObject {
             lastRecoveryStatus = "Invalid bridge URL"
             return
         }
-        let endpoint = PushRecoveryEndpoint.queued(server: server, token: pushToken)
         recoveryInProgress = true
         lastRecoveryAttempt = now
         Task {
             defer { finishRecovery() }
             do {
-                let result = try await fetchQueuedLEDUpdates(from: endpoint, source: "Recovered push")
+                let result = try await recoverPairedUpdates(server: server, source: "Recovered push")
                 lastRecoveryStatus = result.queuedCount == 0
                     ? "Up to date"
                     : "Recovered \(result.handledCount)"
@@ -892,17 +966,13 @@ final class AppModel: ObservableObject {
             throw ServerLEDUpdateError.invalidBridgeURL
         }
 
-        let endpoint = PushRecoveryEndpoint.queued(server: server, token: pushToken)
 
         recoveryInProgress = true
         lastRecoveryAttempt = Date()
         defer { finishRecovery() }
 
         do {
-            let result = try await fetchQueuedLEDUpdates(
-                from: endpoint,
-                source: "Shortcut server update"
-            )
+            let result = try await recoverPairedUpdates(server: server, source: "Shortcut server update")
             lastRecoveryStatus = result.queuedCount == 0
                 ? "Up to date"
                 : "Updated \(result.handledCount)"
@@ -930,11 +1000,26 @@ final class AppModel: ObservableObject {
         }
     }
 
+    private func recoverPairedUpdates(server: URL, source: String) async throws -> ServerLEDUpdateResult {
+        var queued = 0, handled = 0
+        var firstError: Error?
+        for key in pushKeys.records.filter({ !$0.isExpired(at: Date()) }) {
+            let endpoint = PushRecoveryEndpoint.queued(server: server, token: pushToken, key: key.value)
+            do {
+                let result = try await fetchQueuedLEDUpdates(from: endpoint, source: source)
+                queued += result.queuedCount; handled += result.handledCount
+            } catch { if firstError == nil { firstError = error } }
+        }
+        if let firstError { throw firstError }
+        return ServerLEDUpdateResult(queuedCount: queued, handledCount: handled)
+    }
+
     private func fetchQueuedLEDUpdates(
         from endpoint: URL,
         source: String
     ) async throws -> ServerLEDUpdateResult {
         var request = URLRequest(url: endpoint)
+        request.timeoutInterval = 5
         request.cachePolicy = .reloadIgnoringLocalCacheData
         let (data, response) = try await URLSession.shared.data(for: request)
         guard let httpResponse = response as? HTTPURLResponse,

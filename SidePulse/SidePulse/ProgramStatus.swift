@@ -107,17 +107,20 @@ struct ProgramAccounting: Codable {
                                      seq: parsed.seq, record: parsed.record.status.state == "clear" ? nil : parsed.record)
     }
     private mutating func retainRecentSessions(touched: String? = nil) {
-        let active = entries.filter { $0.value.record != nil }
         var seen = Set<String>()
-        recentSessions = recentSessions.filter { active[$0] != nil && seen.insert($0).inserted }
-        let missing = active.keys.filter { !seen.contains($0) }.sorted {
-            let a = active[$0]!.record!.updated_at, b = active[$1]!.record!.updated_at
+        recentSessions = recentSessions.filter { entries[$0] != nil && seen.insert($0).inserted }
+        let missing = entries.keys.filter { !seen.contains($0) }.sorted {
+            let a = entries[$0]!.record?.updated_at ?? 0, b = entries[$1]!.record?.updated_at ?? 0
             return a == b ? $0 < $1 : a < b
         }
         recentSessions = missing + recentSessions
-        if let touched, active[touched] != nil { recentSessions.removeAll { $0 == touched }; recentSessions.append(touched) }
-        while recentSessions.count > 64 { entries[recentSessions.removeFirst()]!.record = nil }
+        if let touched, entries[touched] != nil { recentSessions.removeAll { $0 == touched }; recentSessions.append(touched) }
+        let active = recentSessions.filter { entries[$0]?.record != nil }
+        for id in active.prefix(max(0, active.count - 64)) { entries[id]!.record = nil }
+        // One latest value per session, including a bounded window of clear guards.
+        while recentSessions.count > 128 { entries.removeValue(forKey: recentSessions.removeFirst()) }
     }
+
     mutating func receiveMessage(_ raw: [String: Any], sender: String) throws -> Bool {
         let update = try ProgramUpdate.parse(raw)
         var entry = TrackedProgramSession(sender: sender, publisher: update.publisher, scope: update.scope, seq: update.seq, record: update.record)
@@ -133,12 +136,6 @@ struct ProgramAccounting: Codable {
         entries[id]!.record = nil // Keep sequence protection until a newer report arrives.
         retainRecentSessions()
         return true
-    }
-    @discardableResult mutating func acknowledgeSession(id: String, seq: Int64) -> Bool {
-        guard entries[id]?.seq == seq, entries[id]?.record?.status.state == "done" else { return false }
-        entries[id]!.record!.status.state = "idle"
-        entries[id]!.record!.status.msg = nil
-        return true // Keep source sequence, timestamp, and arrival order unchanged.
     }
     @discardableResult mutating func retainSenders(_ allowed: Set<String>) -> Bool {
         let removed = entries.keys.filter { !allowed.contains(entries[$0]!.sender) }
@@ -168,20 +165,22 @@ struct ProgramAccounting: Codable {
     }
 }
 
-/// A successful direct write owns presentation until a newer status is accepted.
-/// Duplicate updates cannot resume automation or replay an animation.
+/// New enabled states play once; hidden states can update only existing session output.
 struct ProgramPresentation {
     private(set) var enabled: Bool
-    private var lastWrittenState: String?
+    private(set) var sessionOutput = false
+    private var stateEnabled = true
+    private var lastOutput: String?
     init(enabled: Bool = false) { self.enabled = enabled }
-    mutating func statusChanged(ledsEnabled: Bool = true) {
-        guard ledsEnabled else { return }
-        if !enabled { lastWrittenState = nil }; enabled = true
+    mutating func statusChanged(ledsEnabled: Bool = true, stateEnabled: Bool = true) {
+        self.stateEnabled = stateEnabled
+        enabled = ledsEnabled && (stateEnabled || sessionOutput)
     }
-    mutating func manualWrite() { enabled = false; lastWrittenState = nil }
-    mutating func deviceChanged() { lastWrittenState = nil }
-    func needsWrite(_ state: String) -> Bool { enabled && lastWrittenState != state }
-    mutating func didWrite(_ state: String) { lastWrittenState = state }
+    mutating func manualWrite() { enabled = false; sessionOutput = false }
+    mutating func deviceChanged() { manualWrite() }
+    func needsWrite(_ state: String) -> Bool { enabled && (stateEnabled || state != lastOutput) }
+    mutating func didWrite(_ state: String) { enabled = false; lastOutput = state }
+    mutating func displayedSession(_ visible: Bool) { sessionOutput = visible }
 }
 
 
@@ -194,6 +193,9 @@ struct ProgramSession: Identifiable, Equatable {
     let status: ProgramFields
     let updatedAt: Int64
     let seq: Int64
+
+    var publisher: String { id.components(separatedBy: "\u{0}").dropFirst().first ?? "" }
+    var link: SessionLink { SessionLink(publisher: publisher, scope: scope) }
 
     static func priority(_ state: String) -> Int {
         ["error": 0, "blocked": 1, "working": 2, "done": 3, "idle": 4][state] ?? 4
@@ -229,7 +231,7 @@ struct SessionLEDSettings: Codable, Equatable {
     static let conditions = [("working", "Working"), ("done", "Done"), ("blocked", "Ask")]
     var enabled = true
     var patterns: [String: UUID] = [:]
-    var disabledStates: Set<String> = []
+    var disabledStates: Set<String> = ["working", "done"]
 
     init() {}
     private enum CodingKeys: String, CodingKey { case enabled, patterns, disabledStates }
@@ -237,7 +239,7 @@ struct SessionLEDSettings: Codable, Equatable {
         let values = try decoder.container(keyedBy: CodingKeys.self)
         enabled = try values.decodeIfPresent(Bool.self, forKey: .enabled) ?? true
         patterns = try values.decodeIfPresent([String: UUID].self, forKey: .patterns) ?? [:]
-        disabledStates = try values.decodeIfPresent(Set<String>.self, forKey: .disabledStates) ?? []
+        disabledStates = try values.decodeIfPresent(Set<String>.self, forKey: .disabledStates) ?? ["working", "done"]
         disabledStates.formIntersection(Self.conditions.map { $0.0 })
     }
     private func condition(for state: String) -> String? {
@@ -273,18 +275,35 @@ struct SessionLEDSettings: Codable, Equatable {
 extension SessionActivitySummary {
     init?(sessions: [ProgramSession]) {
         guard let first = sessions.first else { return nil }
-        total = sessions.count
-        working = sessions.filter { $0.status.state == "working" }.count
-        attention = sessions.filter { ["blocked", "error"].contains($0.status.state) }.count
-        done = sessions.filter { $0.status.state == "done" }.count
-        state = first.status.state; title = first.title; statusLabel = first.statusLabel
-        appName = first.appName; progress = first.status.progress
-        // ActivityKit has a small content budget. Keep exact session text in the app.
-        message = first.status.msg.map { text in
-            var bytes = Array(text.utf8.prefix(512))
-            while String(bytes: bytes, encoding: .utf8) == nil { bytes.removeLast() }
-            return String(bytes: bytes, encoding: .utf8)!
-        }
+        state = first.status.state
         updatedAt = Date(timeIntervalSince1970: Double(sessions.map(\.updatedAt).max()!) / 1000)
     }
+}
+
+/// A public session identity, never a pairing key or a command to write LEDs.
+struct SessionLink: Equatable {
+    let publisher: String
+    let scope: String
+    var url: URL {
+        var value = URLComponents()
+        value.scheme = "sidepulse"; value.host = "sessions"
+        value.queryItems = [URLQueryItem(name: "publisher", value: publisher), URLQueryItem(name: "scope", value: scope)]
+        value.percentEncodedQuery = value.percentEncodedQuery?.replacingOccurrences(of: "+", with: "%2B")
+        return value.url!
+    }
+    static func parse(_ url: URL) -> SessionLink? {
+        guard let value = URLComponents(url: url, resolvingAgainstBaseURL: false),
+              value.scheme?.lowercased() == "sidepulse", value.host?.lowercased() == "sessions",
+              value.user == nil, value.port == nil, value.fragment == nil, ["", "/"].contains(value.path) else { return nil }
+        let items = value.queryItems ?? []
+        func identifier(_ name: String) -> String? {
+            let matches = items.filter { $0.name == name }
+            guard matches.count == 1, let text = matches.first?.value, !text.isEmpty, text.utf8.count <= 128,
+                  !text.unicodeScalars.contains(where: { $0.value < 32 || (127...159).contains($0.value) }) else { return nil }
+            return text
+        }
+        guard let publisher = identifier("publisher"), let scope = identifier("scope") else { return nil }
+        return SessionLink(publisher: publisher, scope: scope)
+    }
+    func matches(_ session: ProgramSession) -> Bool { session.publisher == publisher && session.scope == scope }
 }

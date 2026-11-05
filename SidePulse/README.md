@@ -158,6 +158,13 @@ notifications and returns without fetching updates. Missing setup, ignored
 updates, and network failures are recorded in diagnostics instead of producing
 Shortcuts error alerts.
 
+Local LED Shortcuts show an unavailable-device or folder-access warning once.
+Further attempts while the Dot is unavailable quietly skip the write, including
+after the app restarts. A successful LED write resets the warning for the next
+disconnection. Skipped actions do not update Last pattern or add successful
+playback history. Invalid LED programs and unrelated write errors still report
+their errors normally.
+
 Notifications with missing, unknown, or removed keys are dismissed when the app
 handles them, becomes active, removes a key, or runs the update action. Rejection
 never writes LEDs, changes link state, records sender activity, or adds
@@ -434,26 +441,13 @@ The apps support three independent paths:
 3. **Shortcut actions:** a local shortcut plays a saved pattern or raw LED program,
    without changing session state.
 
-Settings → **Session display** has just **Working**, **Done**, and **Ask**, each
-with an on/off switch and a library-pattern choice. Ask combines input/approval
-requests, questions, sign-in, and errors, matching Mac. Its pattern uses the
-existing Needs attention choice. Switches affect LEDs and the combined iOS Live Activity; all
-sessions keep their original states in the list. For only completion and input
-alerts, turn Working off and leave Done and Ask on. Disabled conditions are
-skipped; Idle or no enabled sessions turns LEDs off and ends Live Activity.
-Switches apply immediately and persist across restart; chosen patterns are kept
-when switched off. Existing Working, Done, and Needs attention patterns are preserved.
-Turning session LEDs off stops an active session animation with an Off command.
-Tracking continues. Manual remote and Shortcut output is preserved, and incoming
-session reports cannot take over LEDs while the master switch is off. Re-enabling
-session LEDs applies the current enabled state.
-The LED master switch does not turn off Live Activity.
-Deleting a chosen pattern falls back to that condition's built-in pattern.
+Home shows **Last pattern**, with the source and time of the last successful Dot write. It distinguishes session output, remote senders, Shortcuts, library playback, manual writes and settings previews. This is a saved receipt of the last write, not a claim that a finite pattern is still playing. Failed writes and ordinary status refreshes leave it unchanged; it does not replay output on restart. Older installations show “Not recorded yet” until their next successful write.
 
-A successful direct write owns LED output until a newer accepted session update
-arrives while session LEDs are enabled. Duplicate/stale delivery and reconnecting do not resume session output.
-Changing session settings is an explicit request to apply those settings.
-Sessions continue to update independently of USB availability and manual output.
+Settings → **Session display** exposes Working, Done, and Ask, each with a switch and pattern choice. Ask includes input/approval requests and errors. **Only Ask is on by default**; explicit saved preferences are preserved. The switches filter LED signals and iOS Live Activity, while every session remains in the list.
+
+A newly accepted enabled status gets one LED attempt. Hidden or Idle states stop an existing session pattern when no enabled state remains, but do not overwrite a manual pattern. Startup, reconnect, duplicate delivery, and failed automatic attempts do not replay output. Manual Off sends Off once. Choosing a session pattern or enabling a state previews that state's pattern once on a connected Dot, even without a matching session or with automatic session LEDs disabled. Previewing does not change session accounting or invent Live Activity state. Other explicit settings changes apply the current enabled state (or Off). Clear can refresh an existing session output but preserve a later successful manual write. Direct remote commands and Shortcuts remain independent writers. Unplugging the Dot does not produce a failure notification.
+
+Session rows can share/copy `sidepulse://sessions?publisher=<publisher>&scope=<scope>`. The link opens matching rows already stored on the phone, with a Show all sessions action. It contains no pairing key and does not fetch state, pair, acknowledge, or write LEDs. The Mac’s session options also provide a matching mobile link.
 
 Only individual `program_status` updates are accepted. Session completion, errors,
 and removal use explicit `done`, `error`, and `clear` states. Snapshot receive mode
@@ -465,41 +459,27 @@ and sequence guards are not imported.
 Paired senders and publishers remain isolated. The 64 most recently updated
 nonempty sessions are retained, with the oldest evicted first. Duplicate/stale
 updates do not refresh recency. Clear, local dismissal, and eviction preserve
-sequence guards across restarts. Done is hidden after 20 minutes; silence does
+sequence guards across restarts within a bounded window of 128 recent sessions. Older guards are dropped to bound memory. Done is hidden after 20 minutes; silence does
 not imply completion. Both apps can clear a row until a newer update arrives.
-For a Done session, swipe left and choose **Acknowledge** to keep it listed as
-Idle instead. This is local to the phone and survives restart; duplicate reports
-cannot undo it, and a newer report replaces Idle. Other sessions keep their
-priority, manual LED control stays in effect, and the combined Live Activity
-updates to match.
+
 
 Pairing advertises `status_protocol: 2`. Status messages travel in the existing
 bridge's `data` object or JSON string, with the authorized key outside `data`.
-Queue recovery uses the same receiver as live push. The bridge retains up to
+Queue recovery uses the same receiver as live push. Each active paired key has a separate keyed recovery request; one sender cannot read or drain another sender’s records. New/re-enabled forwarding destinations receive only subsequent updates, with no stored-state replay. The bridge retains up to
 10 latest session values per routing key for at most 300 seconds; missed/expired
 clears cannot be reconstructed by the phone.
 
 The shared `program-updates.json` test fixture exercises individual states,
 normalization, replacement, stale replay, and session-list presentation. Tests
 also cover multiple senders, recency eviction, saved-session replay guards, manual
-presentation ownership, dismissal, and pattern preferences. Physical USB output
+one-shot presentation, dismissal, session links, and pattern preferences. Physical USB output
 still requires an attached authorized device. See [verification and human checks](docs/mobile-session-status-testing.md) for the latest source results and the limits of earlier device evidence.
 
 ### iOS session Live Activity
 
-Settings → Sessions → **Session Live Activity** enables one combined Lock Screen
-and Dynamic Island summary. It shows counts and the highest-priority session,
-using the same Error → Blocked → Working → Done → Idle ordering as the list.
-Message text is shortened only for the activity's display budget. Tap the activity
-to open Sessions. Clearing/revoking the last visible session or disabling the
-setting ends the activity. LED settings and direct writes do not hide it.
+Settings → Sessions → **Session Live Activity** enables one combined Lock Screen and Dynamic Island visualization in SidePulse Pro’s eight-light style. It contains no session titles, messages, paths, or counts. Only enabled display conditions appear. Tap it to open Sessions. Clearing/revoking the last visible session or disabling the setting ends the activity. The LED master switch is independent.
 
-Open SidePulse to start the activity. Existing activities update from accepted
-reports when iOS runs the app, including delivered background notifications.
-A stale indicator distinguishes an old report from a fresh update. This uses
-local ActivityKit updates; it does not add a new bridge endpoint or ActivityKit
-push channel. iOS controls background delivery, so updates are not guaranteed
-while the app is suspended or terminated. See [Apple's Live Activities lifecycle](https://developer.apple.com/documentation/activitykit/displaying-live-data-with-live-activities).
+Open SidePulse to start the activity. Accepted reports update it while iOS runs the app; foreground refresh immediately reevaluates Done expiry. ActivityKit supports brief update transitions, not an indefinitely looping LED animation. Background delivery, suspended/terminated-app behavior, and the exact Lock Screen rendering remain physical-device checks. This uses local ActivityKit updates and no new push endpoint. See [Apple’s animation limits](https://developer.apple.com/documentation/widgetkit/animating-data-updates-in-widgets-and-live-activities).
 
 The Xcode project embeds the `SessionActivityWidget` extension. Build/sign the
 app and extension together. `SessionActivitySummary` is covered by the Swift

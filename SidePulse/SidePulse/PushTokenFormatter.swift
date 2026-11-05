@@ -37,11 +37,11 @@ enum PushTokenFormatter {
 }
 
 enum PushRecoveryEndpoint {
-    static func queued(server: URL, token: String) -> URL {
+    static func queued(server: URL, token: String, key: String) -> URL {
         server
             .appendingPathComponent("api")
             .appendingPathComponent("leds")
-            .appendingPathComponent("apns_\(token)")
+            .appendingPathComponent("apns_\(token)_\(key)")
             .appendingPathComponent("queued")
     }
 }

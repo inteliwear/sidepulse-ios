@@ -60,7 +60,7 @@ struct PlaySavedPatternIntent: AppIntent {
             throw PatternLibraryError.invalid("This pattern was deleted. Choose another pattern in this shortcut.")
         }
         _ = try saved.validated()
-        _ = try DriveWriter.shared.write(saved.ledText)
+        guard try DriveWriter.shared.writeFromShortcut(saved.ledText) != nil else { return .result() }
         await MainActor.run {
             AppModel.shared.ledText = saved.ledText
             AppModel.shared.recordReceivedPush(ReceivedPush(

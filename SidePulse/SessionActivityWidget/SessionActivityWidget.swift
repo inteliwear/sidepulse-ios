@@ -10,81 +10,58 @@ struct SessionActivityBundle: WidgetBundle {
 struct SessionActivityWidget: Widget {
     var body: some WidgetConfiguration {
         ActivityConfiguration(for: SessionActivityAttributes.self) { context in
-            SessionActivityView(summary: context.state, stale: context.isStale)
-                .activityBackgroundTint(Color(.secondarySystemBackground))
-                .activitySystemActionForegroundColor(.primary)
+            ProLights(summary: context.state, stale: context.isStale)
+                .padding(24)
+                .activityBackgroundTint(.black)
                 .widgetURL(URL(string: "sidepulse://sessions"))
         } dynamicIsland: { context in
             DynamicIsland {
-                DynamicIslandExpandedRegion(.leading) {
-                    Label("SidePulse", systemImage: "circle.hexagongrid.fill").font(.caption)
-                }
-                DynamicIslandExpandedRegion(.trailing) { Text("\(context.state.total) sessions").font(.caption) }
-                DynamicIslandExpandedRegion(.bottom) {
-                    SessionActivityView(summary: context.state, stale: context.isStale, compact: true)
+                DynamicIslandExpandedRegion(.center) {
+                    ProLights(summary: context.state, stale: context.isStale).padding(16)
                 }
             } compactLeading: {
-                Image(systemName: context.state.symbol).foregroundStyle(context.state.color)
+                Circle().fill(context.state.color).frame(width: 8, height: 8)
             } compactTrailing: {
-                Text("\(context.state.total)").monospacedDigit()
+                Circle().fill(context.state.color).frame(width: 8, height: 8)
             } minimal: {
-                Image(systemName: context.state.symbol).foregroundStyle(context.state.color)
+                Circle().fill(context.state.color).frame(width: 8, height: 8)
             }
             .widgetURL(URL(string: "sidepulse://sessions"))
         }
     }
 }
 
-private struct SessionActivityView: View {
+/// SidePulse Pro's eight lights, without session names or messages on the Lock Screen.
+/// ActivityKit animates updates for at most two seconds; it cannot run an LED loop.
+private struct ProLights: View {
     let summary: SessionActivitySummary
     let stale: Bool
-    var compact = false
     var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            if !compact {
-                HStack {
-                    Label("SidePulse", systemImage: "circle.hexagongrid.fill").font(.caption.weight(.semibold))
-                    Spacer()
-                    Text("\(summary.total) sessions").font(.caption)
-                }
+        HStack(spacing: 12) {
+            ForEach(0..<8) { index in
+                Circle()
+                    .fill(summary.color.gradient)
+                    .frame(maxWidth: 22, maxHeight: 22)
+                    .aspectRatio(1, contentMode: .fit)
+                    .shadow(color: summary.color.opacity(0.7), radius: 7)
+                    .opacity(stale ? 0.35 : (index.isMultiple(of: 2) ? 1 : 0.75))
+                    .id("\(index):\(summary.updatedAt.timeIntervalSince1970)")
+                    .transition(.opacity)
             }
-            HStack(alignment: .firstTextBaseline) {
-                Image(systemName: summary.symbol).foregroundStyle(summary.color)
-                Text(summary.title).font(.headline).lineLimit(1)
-                Spacer(minLength: 4)
-                if let progress = summary.progress { Text("\(progress)%").monospacedDigit().font(.caption) }
-            }
-            Text(summary.statusLabel + " · " + summary.appName).font(.subheadline).foregroundStyle(summary.color)
-            if !compact, let message = summary.message, !message.isEmpty { Text(message).font(.caption).lineLimit(2) }
-            HStack {
-                Text("\(summary.working) working · \(summary.attention) need attention · \(summary.done) done")
-                Spacer(minLength: 0)
-            }.font(.caption2).foregroundStyle(.secondary)
-            HStack(spacing: 4) {
-                Text(stale ? "Last reported" : "Updated")
-                Text(summary.updatedAt.formatted(date: .abbreviated, time: .shortened))
-            }.font(.caption2).foregroundStyle(.secondary)
-        }.padding(compact ? 4 : 16)
+        }
+        .animation(.easeInOut(duration: 1.2), value: summary)
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel("SidePulse")
     }
 }
 
 private extension SessionActivitySummary {
-    var symbol: String {
-        switch state {
-        case "error": return "exclamationmark.triangle.fill"
-        case "blocked": return "hand.raised.fill"
-        case "working": return "gearshape.2.fill"
-        case "done": return "checkmark.circle.fill"
-        default: return "pause.circle"
-        }
-    }
     var color: Color {
         switch state {
-        case "error": return .red
-        case "blocked": return .orange
+        case "error", "blocked": return Color(red: 1, green: 0.23, blue: 0)
         case "working": return .cyan
         case "done": return .green
-        default: return .secondary
+        default: return .clear
         }
     }
 }

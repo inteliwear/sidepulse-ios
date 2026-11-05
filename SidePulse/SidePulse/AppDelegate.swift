@@ -62,7 +62,7 @@ final class AppDelegate: NSObject, UIApplicationDelegate, UNUserNotificationCent
         options: [UIApplication.OpenURLOptionsKey: Any] = [:]
     ) -> Bool {
         if url.scheme?.lowercased() == "sidepulse", url.host?.lowercased() == "sessions" {
-            Task { @MainActor in AppModel.shared.showSessions = true }
+            Task { @MainActor in AppModel.shared.openSessions(url) }
             return true
         }
         if url.scheme?.lowercased() == "sidepulse",
@@ -90,7 +90,8 @@ final class AppDelegate: NSObject, UIApplicationDelegate, UNUserNotificationCent
             AppModel.shared.acceptsPush(userInfo)
         }
         _ = await AppModel.shared.processPushAndCleanUp(userInfo, source: "Foreground push")
-        return shouldPresent ? [.banner, .sound] : []
+        let statusOnly = ProgramUpdate.isStatusPayload(userInfo) && !AppModel.hasIndependentAlert(userInfo)
+        return shouldPresent && !statusOnly ? [.banner, .sound] : []
     }
 
     func userNotificationCenter(

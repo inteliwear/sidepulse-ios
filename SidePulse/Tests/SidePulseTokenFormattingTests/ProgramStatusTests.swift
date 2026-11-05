@@ -62,21 +62,22 @@ final class ProgramStatusTests: XCTestCase {
         XCTAssertNil(ProgramUpdate.pushedUpdate(["data": "invalid json"]))
         XCTAssertNil(ProgramUpdate.pushedUpdate(["leds": "off"]))
     }
-    func testPresentationRetryReconnectAndDuplicateUpdates() {
+    func testNewEnabledUpdateGetsOneAttemptAndReconnectStaysQuiet() {
         var p = ProgramPresentation()
         XCTAssertFalse(p.needsWrite("working"))
         p.statusChanged(); XCTAssertTrue(p.needsWrite("working"))
         XCTAssertTrue(p.needsWrite("working"))
         p.didWrite("working"); XCTAssertFalse(p.needsWrite("working"))
-        p.statusChanged(); XCTAssertFalse(p.needsWrite("working"))
+        p.statusChanged(); XCTAssertTrue(p.needsWrite("working"))
         p.manualWrite(); p.deviceChanged(); XCTAssertFalse(p.needsWrite("working"))
         p.statusChanged(); XCTAssertTrue(p.needsWrite("working"))
-        p.didWrite("working"); p.deviceChanged(); XCTAssertTrue(p.needsWrite("working"))
+        p.didWrite("working"); p.deviceChanged(); XCTAssertFalse(p.needsWrite("working"))
     }
 }
 extension ProgramStatusTests {
     func testSessionLEDPatternPreferencesPersistenceAndMissingPatternFallback() throws {
         var settings = SessionLEDSettings()
+        settings.disabledStates = []
         for (state, _) in SessionLEDSettings.conditions {
             XCTAssertEqual(settings.program(for: state, library: []), ProgramAccounting.program(for: state))
         }
@@ -103,6 +104,8 @@ extension ProgramStatusTests {
         let changed = "working\u{0}new pattern"
         presentation.didWrite(previous)
         XCTAssertFalse(presentation.needsWrite(previous))
+        XCTAssertFalse(presentation.needsWrite(changed))
+        presentation.statusChanged() // Explicit settings action grants one attempt.
         XCTAssertTrue(presentation.needsWrite(changed))
         presentation.didWrite(changed)
         XCTAssertFalse(presentation.needsWrite(changed))
@@ -118,7 +121,7 @@ extension ProgramStatusTests {
         settings.enabled = false
         XCTAssertNil(settings.ledState(in: store.sessions(now: 2_000_000)))
         XCTAssertEqual(store.sessions(now: 2_000_000).count, 1)
-        XCTAssertTrue(presentation.needsWrite("off"))
+        XCTAssertFalse(presentation.needsWrite("off")) // Manual Off is a direct one-shot action.
         presentation.didWrite("off")
         XCTAssertFalse(presentation.needsWrite("off"))
 
@@ -139,8 +142,8 @@ extension ProgramStatusTests {
         let previous: [String: Any] = ["enabled": false, "patterns": ["done": pattern.id.uuidString]]
         var settings = try JSONDecoder().decode(SessionLEDSettings.self, from: JSONSerialization.data(withJSONObject: previous))
         XCTAssertFalse(settings.enabled)
-        XCTAssertTrue(SessionLEDSettings.conditions.allSatisfy { settings.shows($0.0) })
-        XCTAssertEqual(settings.program(for: "done", library: [pattern]), pattern.ledText)
+        XCTAssertTrue(settings.shows("blocked")); XCTAssertFalse(settings.shows("working")); XCTAssertFalse(settings.shows("done"))
+        XCTAssertEqual(settings.patterns["done"], pattern.id)
         settings.disabledStates = ["working", "done"]
         settings = try JSONDecoder().decode(SessionLEDSettings.self, from: JSONEncoder().encode(settings))
         XCTAssertEqual(settings.disabledStates, ["working", "done"])
@@ -170,8 +173,7 @@ extension ProgramStatusTests {
         let displayed = settings.displayedSessions(in: sessions)
         XCTAssertEqual(displayed.map { $0.status.state }, ["error", "blocked", "done"])
         let summary = try XCTUnwrap(SessionActivitySummary(sessions: displayed))
-        XCTAssertEqual(summary.total, 3); XCTAssertEqual(summary.working, 0)
-        XCTAssertEqual(summary.attention, 2); XCTAssertEqual(summary.done, 1)
+        XCTAssertEqual(summary.state, "error")
         settings.enabled = false // LED master switch does not hide the Live Activity.
         XCTAssertEqual(settings.displayedSessions(in: sessions).count, 3)
         XCTAssertNil(settings.ledState(in: sessions))
@@ -187,64 +189,56 @@ extension ProgramStatusTests {
         XCTAssertEqual(settings.program(for: "idle", library: []), "off\n")
         XCTAssertNil(settings.ledState(in: sessions)) // Hidden sessions must not fall back to Idle.
     }
-    func testAcknowledgedDoneAndNewReportsRespectDisplaySwitches() throws {
-        var store = ProgramAccounting()
-        var settings = SessionLEDSettings()
-        settings.disabledStates = ["working", "blocked"]
-        _ = try store.receiveMessage(event("done"), sender: "a")
-        let done = try XCTUnwrap(store.sessions(now: 2_000_000).first)
-        XCTAssertEqual(settings.ledState(in: [done]), "done")
-        XCTAssertTrue(store.acknowledgeSession(id: done.id, seq: done.seq))
-        XCTAssertEqual(store.sessions().first?.status.state, "idle")
-        XCTAssertNil(settings.ledState(in: store.sessions()))
-        XCTAssertNil(SessionActivitySummary(sessions: settings.displayedSessions(in: store.sessions())))
-        _ = try store.receiveMessage(event("working", seq: 2), sender: "a")
-        XCTAssertNil(settings.ledState(in: store.sessions()))
-        _ = try store.receiveMessage(event("done", seq: 3), sender: "a")
-        XCTAssertEqual(settings.ledState(in: store.sessions(now: 2_000_000)), "done")
-    }
-    func testAcknowledgedDoneStaysIdleAcrossRestartAndRejectsReplays() throws {
-        var store = ProgramAccounting()
-        var done = event("done", seq: 10)
-        done["status"] = ["state": "done", "title": "Example", "app": "codex", "msg": "Finished"]
-        XCTAssertTrue(try store.receiveMessage(done, sender: "a"))
-        let session = try XCTUnwrap(store.sessions(now: 2_000_000).first)
-        XCTAssertTrue(store.acknowledgeSession(id: session.id, seq: session.seq))
-        XCTAssertFalse(store.acknowledgeSession(id: session.id, seq: session.seq))
-        store = try JSONDecoder().decode(ProgramAccounting.self, from: JSONEncoder().encode(store))
-        let idle = try XCTUnwrap(store.sessions().first)
-        XCTAssertEqual(idle.statusLabel, "Idle")
-        XCTAssertEqual(idle.title, session.title)
-        XCTAssertEqual(idle.updatedAt, session.updatedAt)
-        XCTAssertEqual(idle.seq, session.seq)
-        XCTAssertNil(idle.status.msg)
-        XCTAssertEqual(SessionActivitySummary(sessions: store.sessions())?.done, 0)
-        XCTAssertEqual(SessionActivitySummary(sessions: store.sessions())?.state, "idle")
-        XCTAssertFalse(try store.receiveMessage(done, sender: "a"))
-        XCTAssertFalse(try store.receiveMessage(event("done", seq: 9), sender: "a"))
-        XCTAssertEqual(store.representative()?.state, "idle")
-        XCTAssertTrue(try store.receiveMessage(event("done", seq: 11), sender: "a"))
-        XCTAssertFalse(store.acknowledgeSession(id: session.id, seq: session.seq))
-        XCTAssertEqual(store.representative(now: 2_000_000)?.state, "done")
-        XCTAssertTrue(try store.receiveMessage(event("working", seq: 12), sender: "a"))
-        XCTAssertFalse(store.acknowledgeSession(id: session.id, seq: 12))
-        XCTAssertEqual(store.representative()?.state, "working")
-    }
-    func testAcknowledgementKeepsOtherSourcesPriorityAndDoesNotRefreshCapacity() throws {
-        var store = ProgramAccounting()
-        XCTAssertTrue(try store.receiveMessage(event("done"), sender: "a"))
-        let done = try XCTUnwrap(store.sessions(now: 2_000_000).first)
-        for (sender, publisher, scope) in [("b", "mac", "session"), ("a", "other", "session"), ("a", "mac", "other")] {
-            XCTAssertTrue(try store.receiveMessage(event("blocked", scope: scope, publisher: publisher), sender: sender))
+    func testHiddenTransitionsStopSessionOutputWithoutReplayingOtherSources() throws {
+        for finalState in ["done", "working", "idle", "clear"] {
+            var store = ProgramAccounting()
+            let settings = SessionLEDSettings()
+            var presentation = ProgramPresentation()
+            var writes: [String] = []
+            func receive(_ sender: String, _ state: String, _ seq: Int) throws {
+                if try store.receiveMessage(event(state, seq: seq), sender: sender) {
+                    presentation.statusChanged(ledsEnabled: settings.enabled, stateEnabled: settings.shows(state))
+                }
+                let sessions = store.sessions(now: 2_000_000)
+                let mode = settings.ledState(in: sessions)
+                let program = mode.map { settings.program(for: $0, library: []) } ?? "off\n"
+                let output = (mode ?? "off") + "\u{0}" + program
+                if presentation.needsWrite(output) {
+                    presentation.didWrite(output)
+                    writes.append(program)
+                    presentation.displayedSession(mode != nil)
+                }
+                XCTAssertEqual(SessionActivitySummary(sessions: settings.displayedSessions(in: sessions))?.state, mode)
+            }
+            try receive("a", "working", 1)
+            XCTAssertTrue(writes.isEmpty)
+            try receive("a", "blocked", 2)
+            try receive("b", "blocked", 1)
+            XCTAssertEqual(writes.count, 2)
+            try receive("a", finalState, 3)
+            XCTAssertEqual(writes.count, 2) // Another sender still needs input; no replay.
+            try receive("b", finalState, 2)
+            XCTAssertEqual(writes, [ProgramAccounting.program(for: "blocked"), ProgramAccounting.program(for: "blocked"), "off\n"])
+            XCTAssertFalse(presentation.sessionOutput)
+            try receive("b", finalState, 2)
+            try receive("b", "blocked", 1)
+            XCTAssertEqual(writes.count, 3)
         }
-        XCTAssertTrue(store.acknowledgeSession(id: done.id, seq: done.seq))
-        XCTAssertEqual(store.sessions().count, 4)
-        XCTAssertEqual(store.representative()?.state, "blocked")
-        XCTAssertFalse(store.acknowledgeSession(id: "missing", seq: 1))
-        for i in 0..<61 { _ = try store.receiveMessage(event(scope: "extra-\(i)"), sender: "a") }
-        XCTAssertEqual(store.sessions().count, 64)
-        XCTAssertFalse(store.sessions().contains { $0.id == done.id })
-        XCTAssertFalse(try store.receiveMessage(event("done"), sender: "a"))
+    }
+    func testHiddenStatesPreserveManualOutputAndReconnectStaysQuiet() {
+        var p = ProgramPresentation()
+        p.statusChanged(); p.didWrite("ask"); p.displayedSession(true)
+        p.manualWrite() // Includes Shortcut, remote push, library and settings previews.
+        for state in ["done", "working", "idle", "clear"] {
+            p.statusChanged(stateEnabled: false)
+            XCTAssertFalse(p.needsWrite("off"), state)
+        }
+        p.statusChanged(); XCTAssertTrue(p.needsWrite("ask"))
+        p.didWrite("ask"); p.displayedSession(true)
+        p.statusChanged(ledsEnabled: false, stateEnabled: false)
+        XCTAssertFalse(p.needsWrite("off"))
+        p.deviceChanged(); p.statusChanged(stateEnabled: false)
+        XCTAssertFalse(p.needsWrite("off"))
     }
     func testLocalSessionClearPersistsUntilANewerMatchingUpdate() throws {
         var store = ProgramAccounting()
@@ -353,21 +347,25 @@ extension ProgramStatusTests {
         XCTAssertTrue(store.sessions().contains { $0.sender == "sender-1" })
         XCTAssertFalse(store.sessions().contains { $0.sender == "sender-2" })
         XCTAssertEqual(store.sessions().count, 64)
+        for i in 0..<1000 { _ = try store.receiveMessage(event("clear", scope: "closed-\(i)"), sender: "sender") }
+        let saved = try XCTUnwrap(JSONSerialization.jsonObject(with: JSONEncoder().encode(store)) as? [String: Any])
+        XCTAssertLessThanOrEqual((saved["entries"] as? [String: Any])?.count ?? 0, 128)
+
     }
 }
 
 extension ProgramStatusTests {
-    func testCombinedActivityUsesLedgerPriorityCountsAndBoundedText() throws {
+    func testCombinedActivityUsesPriorityAndDoesNotExportSessionText() throws {
         var store = ProgramAccounting()
         _ = try store.receiveMessage(event(), sender: "a")
         var blocked = event("blocked", scope: "approval"); blocked["status"] = ["state": "blocked", "kind": "permission", "title": "Release", "msg": String(repeating: "🙂", count: 512), "progress": 50]
         _ = try store.receiveMessage(blocked, sender: "b")
         _ = try store.receiveMessage(event("done", scope: "finished"), sender: "a")
         let summary = try XCTUnwrap(SessionActivitySummary(sessions: store.sessions(now: 2_000_000)))
-        XCTAssertEqual(summary.total, 3); XCTAssertEqual(summary.working, 1); XCTAssertEqual(summary.attention, 1); XCTAssertEqual(summary.done, 1)
-        XCTAssertEqual(summary.title, "Release"); XCTAssertEqual(summary.statusLabel, "Needs approval"); XCTAssertEqual(summary.progress, 50)
-        XCTAssertLessThanOrEqual(summary.message!.utf8.count, 512)
-        XCTAssertLessThan(try JSONEncoder().encode(summary).count, 4096)
+        XCTAssertEqual(summary.state, "blocked")
+        let fields = try XCTUnwrap(JSONSerialization.jsonObject(with: JSONEncoder().encode(summary)) as? [String: Any])
+        XCTAssertEqual(Set(fields.keys), ["state", "updatedAt"])
+        XCTAssertFalse(String(data: try JSONEncoder().encode(summary), encoding: .utf8)!.contains("Release"))
         store.retainSenders([]); XCTAssertNil(SessionActivitySummary(sessions: store.sessions()))
     }
     func testStatusEnvelopesCannotFallThroughToDirectLEDRouting() {
@@ -377,5 +375,23 @@ extension ProgramStatusTests {
             XCTAssertNil(ProgramUpdate.pushedUpdate(payload))
         }
         XCTAssertFalse(ProgramUpdate.isStatusPayload(["data": ["leds": "off"]]))
+    }
+}
+
+extension ProgramStatusTests {
+    func testSessionLinksSelectExistingRowsWithoutSecretsOrStateChanges() throws {
+        var store = ProgramAccounting()
+        let scope = "release / + &?🙂", publisher = "mac+team"
+        _ = try store.receiveMessage(event(scope: scope, publisher: publisher), sender: "local-pairing-key-id")
+        let before = try JSONEncoder().encode(store)
+        let session = try XCTUnwrap(store.sessions().first)
+        let link = try XCTUnwrap(SessionLink.parse(session.link.url))
+        XCTAssertEqual(link.publisher, publisher); XCTAssertEqual(link.scope, scope)
+        XCTAssertTrue(link.matches(session))
+        XCTAssertFalse(link.url.absoluteString.contains("local-pairing-key-id"))
+        for url in ["https://sessions?publisher=p&scope=s", "sidepulse://sessions?publisher=p", "sidepulse://sessions?publisher=p&publisher=q&scope=s", "sidepulse://sessions?publisher=p&scope=%00", "sidepulse://other?publisher=p&scope=s"] {
+            XCTAssertNil(SessionLink.parse(try XCTUnwrap(URL(string: url))))
+        }
+        XCTAssertEqual(try JSONEncoder().encode(store).count, before.count)
     }
 }

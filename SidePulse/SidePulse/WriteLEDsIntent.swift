@@ -203,7 +203,7 @@ struct PulseLEDsIntent: AppIntent {
         let count = SidePulseLEDProgram.bounded(pulseCount)
         let ledColor = color.ledColor
         let program = SidePulseLEDProgram.pulse(color: ledColor, count: count)
-        _ = try DriveWriter.shared.write(program)
+        guard try DriveWriter.shared.writeFromShortcut(program) != nil else { return .result() }
         await recordShortcutWrite(
             title: "Pulse \(ledColor.displayName)",
             body: "\(count) \(count == 1 ? "pulse" : "pulses")",
@@ -233,7 +233,7 @@ struct BreatheLEDsIntent: AppIntent {
     func perform() async throws -> some IntentResult {
         let ledColor = color.ledColor
         let program = SidePulseLEDProgram.breathe(color: ledColor)
-        _ = try DriveWriter.shared.write(program)
+        guard try DriveWriter.shared.writeFromShortcut(program) != nil else { return .result() }
         await recordShortcutWrite(
             title: "Breathe \(ledColor.displayName)",
             body: "Repeats until changed",
@@ -253,7 +253,7 @@ struct TurnOffLEDsIntent: AppIntent {
 
     func perform() async throws -> some IntentResult {
         let program = "off\n"
-        _ = try DriveWriter.shared.write(program)
+        guard try DriveWriter.shared.writeFromShortcut(program) != nil else { return .result() }
         await recordShortcutWrite(
             title: "Off",
             body: "Turned off SidePulse Dot",
@@ -283,7 +283,7 @@ struct WriteLEDsIntent: AppIntent {
     }
 
     func perform() async throws -> some IntentResult {
-        _ = try DriveWriter.shared.write(ledsText)
+        guard try DriveWriter.shared.writeFromShortcut(ledsText) != nil else { return .result() }
         await recordShortcutWrite(
             title: "Custom LEDS.LED",
             body: "Wrote \(ledsText.utf8.count) bytes",
